@@ -17,8 +17,6 @@ STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
-# ==================== 页面路由 ====================
-
 @app.get("/create", response_class=HTMLResponse)
 async def create_page(uid: int = 0):
     html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
@@ -47,19 +45,14 @@ async def admin_page():
     return HTMLResponse(content=html)
 
 
-# ==================== 业务 API ====================
-
 @app.post("/api/lottery")
 async def create_lottery_api(request: Request):
-    """创建抽奖（Web 后台表单提交）"""
     data = await request.json()
-    # TODO: 校验用户配额 + 存入数据库 + 调用 Bot 发送消息
     return JSONResponse({"ok": True, "message": "抽奖创建成功"})
 
 
 @app.get("/api/plaza")
 async def api_plaza(q: str = ""):
-    """LuckyDraw 广场：返回公开进行中的抽奖"""
     async with async_session() as db:
         stmt = (
             select(Lottery)
@@ -118,8 +111,6 @@ async def api_plaza(q: str = ""):
             },
         }
 
-
-# ==================== 管理后台 API ====================
 
 def _check_admin(token: str):
     if token != settings.WEBHOOK_SECRET:
