@@ -1,6 +1,5 @@
 from aiogram import Router, types
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from urllib.parse import urlencode
 from sqlalchemy import select, func
 
@@ -14,16 +13,13 @@ router = Router()
 
 @router.message(Command("create"))
 async def create_cmd(message: types.Message):
-    """用户发送 /create，返回 Web 创建链接"""
     user_id = message.from_user.id
 
-    # 检查用户今日是否还有配额
     async with async_session() as db:
         meta = (await db.execute(
             select(UserMeta).where(UserMeta.user_id == user_id)
         )).scalar_one_or_none()
 
-    # 免费版每日 1 次，付费用户由 Web 后台校验
     params = urlencode({"uid": user_id})
     create_url = f"{settings.PUBLIC_HOST}/create?{params}"
 
@@ -38,7 +34,6 @@ async def create_cmd(message: types.Message):
 
 @router.message(Command("my"))
 async def my_lotteries(message: types.Message):
-    """查看用户创建的抽奖"""
     user_id = message.from_user.id
     async with async_session() as db:
         stmt = (
@@ -66,7 +61,6 @@ async def my_lotteries(message: types.Message):
 
 @router.callback_query(lambda c: c.data.startswith("join_"))
 async def join_lottery(callback: types.CallbackQuery):
-    """用户点击"参与抽奖"按钮"""
     try:
         lottery_id = int(callback.data.split("_")[1])
     except (IndexError, ValueError):
@@ -76,7 +70,6 @@ async def join_lottery(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     username = callback.from_user.username or callback.from_user.full_name
 
-    # ===== 1. 读取活动 =====
     async with async_session() as db:
         lottery = (await db.execute(
             select(Lottery).where(Lottery.id == lottery_id)
@@ -90,7 +83,6 @@ async def join_lottery(callback: types.CallbackQuery):
             await callback.answer("⏹️ 该活动已结束", show_alert=True)
             return
 
-        # ===== 2. 检查是否已参与 =====
         exists = (await db.execute(
             select(Participant).where(
                 Participant.lottery_id == lottery_id,
@@ -102,7 +94,6 @@ async def join_lottery(callback: types.CallbackQuery):
             await callback.answer("✅ 你已经参与过了，请耐心等待开奖", show_alert=True)
             return
 
-    # ===== 3. 校验强制关注频道 =====
     channels = lottery.channels or []
     if channels:
         result = await check_channels(callback.bot, user_id, channels)
@@ -114,7 +105,6 @@ async def join_lottery(callback: types.CallbackQuery):
             )
             return
 
-    # ===== 4. 写入参与记录 =====
     async with async_session() as db:
         db.add(Participant(
             lottery_id=lottery_id,
@@ -123,19 +113,15 @@ async def join_lottery(callback: types.CallbackQuery):
         ))
         await db.commit()
 
-        # ===== 5. 更新参与人数 + 满员自动开奖 =====
         count = (await db.execute(
             select(func.count(Participant.id)).where(
                 Participant.lottery_id == lottery_id
             )
         )).scalar() or 0
 
-    # ===== 6. 满员触发开奖 =====
     if lottery.draw_mode == "count" and lottery.target_count:
         if count >= lottery.target_count:
-            # 异步触发开奖，不阻塞用户响应
             import asyncio
-            from app.lottery_service import execute_draw
             asyncio.create_task(_trigger_draw(callback.bot, lottery_id))
 
     await callback.answer(
@@ -145,7 +131,6 @@ async def join_lottery(callback: types.CallbackQuery):
 
 
 async def _trigger_draw(bot, lottery_id: int):
-    """触发开奖（后台任务）"""
     from app.lottery_service import execute_draw
     from app.database import async_session
     async with async_session() as db:
