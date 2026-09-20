@@ -6,7 +6,7 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
 )
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from app.config import settings
 from app.database import async_session
@@ -14,7 +14,6 @@ from app.models import CloneApplication
 
 router = Router()
 
-# 套餐定义（单位：XTR = Telegram Stars）
 PLANS = {
     "monthly": {"title": "月付会员", "price": 500, "days": 30},
     "yearly": {"title": "年付会员", "price": 3500, "days": 365},
@@ -24,7 +23,6 @@ PLANS = {
 
 @router.message(Command("buy"))
 async def buy_cmd(message: types.Message):
-    """展示套餐选项"""
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="月付 · 500 Stars", callback_data="pay_monthly")],
@@ -36,12 +34,12 @@ async def buy_cmd(message: types.Message):
         "💎 <b>升级为付费克隆机器人</b>\n\n"
         "解锁全部功能：\n"
         "✅ 无限次抽奖\n"
-        "✅ 多奖品配置（名称+数量）\n"
-        "✅ 多目标发布（同时发到 N 个群/频道）\n"
+        "✅ 多奖品配置\n"
+        "✅ 多目标发布\n"
         "✅ 强制多频道关注\n"
-        "✅ 数据导出 Excel\n"
-        "✅ 隐私模式（不上广场）\n"
-        "✅ 自定义机器人名称/头像\n\n"
+        "✅ 数据导出\n"
+        "✅ 隐私模式\n"
+        "✅ 自定义品牌\n\n"
         "请选择套餐：",
         parse_mode="HTML",
         reply_markup=keyboard,
@@ -50,7 +48,6 @@ async def buy_cmd(message: types.Message):
 
 @router.callback_query(F.data.startswith("pay_"))
 async def process_plan(callback: types.CallbackQuery):
-    """处理套餐选择，发送支付发票"""
     plan = callback.data.replace("pay_", "")
     info = PLANS.get(plan)
     if not info:
@@ -61,10 +58,10 @@ async def process_plan(callback: types.CallbackQuery):
         await callback.bot.send_invoice(
             chat_id=callback.from_user.id,
             title=info["title"],
-            description=f"LuckyDraw Cloud {info['title']}，有效期 {info['days']} 天，全部功能解锁",
+            description=f"LuckyDraw Cloud {info['title']}，有效期 {info['days']} 天",
             payload=f"clone_{plan}_{callback.from_user.id}",
-            provider_token="",           # Telegram Stars 支付留空
-            currency="XTR",              # XTR = Telegram Stars
+            provider_token="",
+            currency="XTR",
             prices=[LabeledPrice(label=info["title"], amount=info["price"])],
         )
         await callback.answer()
@@ -74,18 +71,14 @@ async def process_plan(callback: types.CallbackQuery):
 
 @router.pre_checkout_query()
 async def pre_checkout(query: PreCheckoutQuery):
-    """预校验：确认订单可以支付"""
-    # 这里可以校验用户是否已经购买过、是否有资格购买等
     await query.answer(ok=True)
 
 
 @router.message(F.successful_payment)
 async def on_successful_payment(message: types.Message):
-    """支付成功后处理"""
     payment = message.successful_payment
     payload = payment.invoice_payload
 
-    # payload 格式：clone_{plan}_{user_id}
     parts = payload.split("_")
     if len(parts) != 3 or parts[0] != "clone":
         return
@@ -96,7 +89,6 @@ async def on_successful_payment(message: types.Message):
     if not info:
         return
 
-    # 创建克隆申请工单（状态：已支付，待管理员创建 Bot）
     async with async_session() as db:
         application = CloneApplication(
             user_id=user_id,
@@ -108,18 +100,15 @@ async def on_successful_payment(message: types.Message):
         await db.refresh(application)
         application_id = application.id
 
-    # 通知用户
     await message.answer(
         f"✅ <b>支付成功！</b>\n\n"
         f"📦 套餐：<b>{info['title']}</b>\n"
         f"💰 金额：<b>{payment.total_amount} Stars</b>\n"
         f"🆔 订单号：<code>#{application_id}</code>\n\n"
-        f"⏳ 管理员将在 5 分钟内为您创建专属机器人。\n"
-        f"创建完成后会私聊通知您，请耐心等待！",
+        f"⏳ 管理员将在 5 分钟内为您创建专属机器人。",
         parse_mode="HTML",
     )
 
-    # 通知所有管理员
     for admin_id in settings.admin_ids_list:
         try:
             await message.bot.send_message(
@@ -140,7 +129,6 @@ async def on_successful_payment(message: types.Message):
 
 @router.message(Command("orders"))
 async def my_orders(message: types.Message):
-    """查看我的订单"""
     user_id = message.from_user.id
 
     async with async_session() as db:
