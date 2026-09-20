@@ -22,6 +22,7 @@ class Lottery(Base):
     id = Column(Integer, primary_key=True)
     bot_id = Column(Integer, nullable=False)
     title = Column(String(200))
+    subtitle = Column(String(200), nullable=True)
     cover_image = Column(Text, nullable=True)
     prizes = Column(JSON)
     targets = Column(JSON)
@@ -69,3 +70,11 @@ class CloneApplication(Base):
     status = Column(String(20), default="pending")
     created_at = Column(DateTime, server_default=func.now())
     processed_at = Column(DateTime, nullable=True)
+
+
+class Referral(Base):
+    __tablename__ = "referrals"
+    id = Column(Integer, primary_key=True)
+    inviter_id = Column(BigInteger, nullable=False)
+    invitee_id = Column(BigInteger, nullable=False, unique=True)
+    created_at = Column(DateTime, server_default=func.now())
