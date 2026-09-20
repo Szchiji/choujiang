@@ -1,4 +1,14 @@
+import re
 from pydantic_settings import BaseSettings
+
+
+def sanitize_webhook_secret(value: str) -> str:
+    if not value:
+        return "lucky_draw_default_secret"
+    cleaned = re.sub(r"[^A-Za-z0-9_-]", "", value)
+    if not cleaned:
+        cleaned = "lucky_draw_default_secret"
+    return cleaned[:256]
 
 
 class Settings(BaseSettings):
@@ -13,6 +23,10 @@ class Settings(BaseSettings):
     @property
     def admin_ids_list(self):
         return [int(x.strip()) for x in self.ADMIN_IDS.split(",") if x.strip()]
+
+    @property
+    def safe_webhook_secret(self) -> str:
+        return sanitize_webhook_secret(self.WEBHOOK_SECRET)
 
     class Config:
         env_file = ".env"
