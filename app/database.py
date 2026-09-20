@@ -32,9 +32,7 @@ def normalize_database_url(url: str) -> str:
     parsed = urlparse(url)
     if parsed.query:
         params = parse_qs(parsed.query)
-        # asyncpg 不认 sslmode，需要去掉
         params.pop("sslmode", None)
-        # 重新拼接
         new_query = urlencode(params, doseq=True)
         url = urlunparse(parsed._replace(query=new_query))
 
@@ -46,12 +44,10 @@ DATABASE_URL = normalize_database_url(settings.DATABASE_URL)
 
 # ==================== 连接参数 ====================
 
-# Railway / 云端数据库通常需要 SSL
 connect_args = {}
 if any(host in DATABASE_URL for host in ["railway", "render", "supabase", "neon", "aws"]):
     connect_args = {"ssl": "prefer"}
 elif "localhost" not in DATABASE_URL and "127.0.0.1" not in DATABASE_URL and "@db" not in DATABASE_URL:
-    # 远程数据库默认启用 SSL
     connect_args = {"ssl": "prefer"}
 
 
@@ -60,10 +56,10 @@ elif "localhost" not in DATABASE_URL and "127.0.0.1" not in DATABASE_URL and "@d
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
-    pool_pre_ping=True,       # 断线自动重连
-    pool_size=5,              # 连接池大小
-    max_overflow=10,          # 溢出连接数
-    pool_recycle=1800,        # 30 分钟回收一次连接
+    pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=10,
+    pool_recycle=1800,
     connect_args=connect_args,
 )
 
@@ -79,17 +75,14 @@ class Base(DeclarativeBase):
 
 
 async def get_db():
-    """FastAPI 依赖注入用"""
     async with async_session() as session:
         yield session
 
 
 async def init_db():
-    """首次启动自动建表（生产环境建议用 alembic）"""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
 
 async def close_db():
-    """优雅关闭连接池"""
     await engine.dispose()
