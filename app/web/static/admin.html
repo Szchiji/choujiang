@@ -35,9 +35,7 @@
     color: #a78bfa; font-weight: 600;
   }
   .main { flex: 1; padding: 32px; }
-  .page-title {
-    font-size: 22px; font-weight: 700; margin-bottom: 24px;
-  }
+  .page-title { font-size: 22px; font-weight: 700; margin-bottom: 24px; }
   .stat-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -48,13 +46,10 @@
     border: 1px solid rgba(255,255,255,0.06);
     border-radius: 16px; padding: 20px;
   }
-  .stat-value {
-    font-size: 28px; font-weight: 800; color: #fbbf24;
-  }
+  .stat-value { font-size: 28px; font-weight: 800; color: #fbbf24; }
   .stat-label {
     font-size: 12px; color: rgba(255,255,255,0.4);
-    margin-top: 4px; text-transform: uppercase;
-    letter-spacing: 1px;
+    margin-top: 4px; text-transform: uppercase; letter-spacing: 1px;
   }
   .table {
     width: 100%; background: #12121e;
@@ -101,7 +96,6 @@
   </aside>
 
   <main class="main">
-    <!-- Dashboard -->
     <div v-if="tab==='dashboard'">
       <h1 class="page-title">📊 数据看板</h1>
       <div class="stat-grid">
@@ -124,7 +118,6 @@
       </div>
     </div>
 
-    <!-- 用户管理 -->
     <div v-if="tab==='users'">
       <h1 class="page-title">👥 用户管理</h1>
       <table class="table">
@@ -150,7 +143,6 @@
       <div v-if="users.length === 0" class="empty">暂无用户</div>
     </div>
 
-    <!-- 订单列表 -->
     <div v-if="tab==='orders'">
       <h1 class="page-title">💰 订单列表</h1>
       <table class="table">
@@ -191,7 +183,6 @@
       <div v-if="orders.length === 0" class="empty">暂无订单</div>
     </div>
 
-    <!-- 机器人管理 -->
     <div v-if="tab==='bots'">
       <h1 class="page-title">🤖 机器人管理</h1>
       <table class="table">
@@ -237,25 +228,28 @@ createApp({
     const users = ref([]);
     const orders = ref([]);
     const bots = ref([]);
+    const adminToken = '{{ADMIN_TOKEN}}';
+
+    const headers = { 'X-Admin-Token': adminToken };
 
     const loadStats = async () => {
-      const res = await fetch('/api/admin/stats');
+      const res = await fetch('/api/admin/stats', { headers });
       stats.value = await res.json();
     };
     const loadUsers = async () => {
-      const res = await fetch('/api/admin/users');
+      const res = await fetch('/api/admin/users', { headers });
       users.value = await res.json();
     };
     const loadOrders = async () => {
-      const res = await fetch('/api/admin/orders');
+      const res = await fetch('/api/admin/orders', { headers });
       orders.value = await res.json();
     };
     const loadBots = async () => {
-      const res = await fetch('/api/admin/bots');
+      const res = await fetch('/api/admin/bots', { headers });
       bots.value = await res.json();
     };
     const approve = async (id) => {
-      await fetch(`/api/admin/orders/${id}/approve`, { method: 'POST' });
+      await fetch(`/api/admin/orders/${id}/approve`, { method: 'POST', headers });
       loadOrders();
     };
 
