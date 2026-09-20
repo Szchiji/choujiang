@@ -11,7 +11,6 @@ async def start_cmd(message: types.Message, command: CommandObject):
     user_id = message.from_user.id
     payload = command.args or ""
 
-    # 处理邀请链接：/start ref_123456
     if payload.startswith("ref_"):
         try:
             inviter_id = int(payload.replace("ref_", ""))
@@ -38,11 +37,12 @@ async def help_cmd(message: types.Message):
     await message.answer(
         "<b>📖 命令列表</b>\n\n"
         "/start - 欢迎信息\n"
-        "/create - 创建抽奖（返回 Web 链接）\n"
+        "/create - 创建抽奖\n"
         "/checkin - 每日签到领次数\n"
         "/invite - 邀请好友得奖励\n"
         "/my - 查看我创建的抽奖\n"
-        "/clone - 申请克隆专属机器人\n"
-        "/buy - 购买付费套餐",
+        "/me - 查看我的账户\n"
+        "/buy - 购买付费套餐\n"
+        "/orders - 我的订单",
         parse_mode="HTML",
     )
