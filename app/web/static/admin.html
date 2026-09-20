@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>管理后台 · LuckyDraw Cloud</title>
+<script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0a0a0f; color: #fff; min-height: 100vh;
+  }
+  .layout { display: flex; min-height: 100vh; }
+  .sidebar {
+    width: 220px; background: #0d0d16;
+    border-right: 1px solid rgba(255,255,255,0.05);
+    padding: 24px 16px;
+  }
+  .logo {
+    font-size: 18px; font-weight: 800; margin-bottom: 32px;
+    background: linear-gradient(135deg, #8be9fd, #fbbf24);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .nav-item {
+    display: block; padding: 12px 14px; margin-bottom: 4px;
+    border-radius: 10px; color: rgba(255,255,255,0.6);
+    text-decoration: none; font-size: 14px;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .nav-item:hover { background: rgba(255,255,255,0.04); color: #fff; }
+  .nav-item.active {
+    background: rgba(124,58,237,0.15);
+    color: #a78bfa; font-weight: 600;
+  }
+  .main { flex: 1; padding: 32px; }
+  .page-title {
+    font-size: 22px; font-weight: 700; margin-bottom: 24px;
+  }
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px; margin-bottom: 32px;
+  }
+  .stat-card {
+    background: linear-gradient(145deg, #12121e, #1a1a2e);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 16px; padding: 20px;
+  }
+  .stat-value {
+    font-size: 28px; font-weight: 800; color: #fbbf24;
+  }
+  .stat-label {
+    font-size: 12px; color: rgba(255,255,255,0.4);
+    margin-top: 4px; text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .table {
+    width: 100%; background: #12121e;
+    border-radius: 16px; overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+  .table th, .table td {
+    padding: 14px 18px; text-align: left;
+    font-size: 14px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .table th {
+    color: rgba(255,255,255,0.4);
+    font-weight: 500; font-size: 12px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .table tr:last-child td { border-bottom: none; }
+  .badge {
+    display: inline-block; padding: 3px 10px;
+    border-radius: 20px; font-size: 11px; font-weight: 600;
+  }
+  .badge-green { background: rgba(16,185,129,0.15); color: #10b981; }
+  .badge-red { background: rgba(239,68,68,0.15); color: #ef4444; }
+  .badge-yellow { background: rgba(251,191,36,0.15); color: #fbbf24; }
+  .badge-blue { background: rgba(139,233,253,0.15); color: #8be9fd; }
+  .btn-sm {
+    padding: 6px 12px; font-size: 12px;
+    background: rgba(124,58,237,0.15);
+    color: #a78bfa; border: 1px solid rgba(124,58,237,0.3);
+    border-radius: 8px; cursor: pointer;
+  }
+  .empty { text-align: center; padding: 60px; color: rgba(255,255,255,0.3); }
+</style>
+</head>
+<body>
+
+<div id="app" class="layout">
+  <aside class="sidebar">
+    <div class="logo">✦ LuckyDraw Admin</div>
+    <a class="nav-item" :class="{active: tab==='dashboard'}" @click="tab='dashboard'">📊 Dashboard</a>
+    <a class="nav-item" :class="{active: tab==='users'}" @click="tab='users'; loadUsers()">👥 用户管理</a>
+    <a class="nav-item" :class="{active: tab==='orders'}" @click="tab='orders'; loadOrders()">💰 订单列表</a>
+    <a class="nav-item" :class="{active: tab==='bots'}" @click="tab='bots'; loadBots()">🤖 机器人</a>
+  </aside>
+
+  <main class="main">
+    <!-- Dashboard -->
+    <div v-if="tab==='dashboard'">
+      <h1 class="page-title">📊 数据看板</h1>
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-value">{{ stats.users }}</div>
+          <div class="stat-label">总用户数</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">{{ stats.lotteries }}</div>
+          <div class="stat-label">总活动数</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">{{ stats.bots }}</div>
+          <div class="stat-label">活跃子号</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">{{ stats.revenue }}</div>
+          <div class="stat-label">累计收入 (Stars)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 用户管理 -->
+    <div v-if="tab==='users'">
+      <h1 class="page-title">👥 用户管理</h1>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>User ID</th>
+            <th>签到天数</th>
+            <th>额外次数</th>
+            <th>邀请数</th>
+            <th>注册时间</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="u in users" :key="u.user_id">
+            <td>{{ u.user_id }}</td>
+            <td>{{ u.sign_in_streak }}</td>
+            <td>{{ u.extra_credits }}</td>
+            <td>{{ u.referral_count }}</td>
+            <td>{{ u.created_at }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div v-if="users.length === 0" class="empty">暂无用户</div>
+    </div>
+
+    <!-- 订单列表 -->
+    <div v-if="tab==='orders'">
+      <h1 class="page-title">💰 订单列表</h1>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>订单号</th>
+            <th>User ID</th>
+            <th>套餐</th>
+            <th>状态</th>
+            <th>创建时间</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="o in orders" :key="o.id">
+            <td>#{{ o.id }}</td>
+            <td>{{ o.user_id }}</td>
+            <td>{{ o.plan }}</td>
+            <td>
+              <span class="badge"
+                    :class="{
+                      'badge-yellow': o.status === 'paid',
+                      'badge-green': o.status === 'approved',
+                      'badge-red': o.status === 'rejected'
+                    }">
+                {{ o.status }}
+              </span>
+            </td>
+            <td>{{ o.created_at }}</td>
+            <td>
+              <button v-if="o.status==='paid'" class="btn-sm" @click="approve(o.id)">
+                ✅ 批准
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <div v-if="orders.length === 0" class="empty">暂无订单</div>
+    </div>
+
+    <!-- 机器人管理 -->
+    <div v-if="tab==='bots'">
+      <h1 class="page-title">🤖 机器人管理</h1>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Owner</th>
+            <th>Bot 名称</th>
+            <th>类型</th>
+            <th>到期时间</th>
+            <th>状态</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="b in bots" :key="b.id">
+            <td>{{ b.id }}</td>
+            <td>{{ b.owner_id }}</td>
+            <td>{{ b.bot_username }}</td>
+            <td>
+              <span class="badge" :class="b.is_master ? 'badge-blue' : 'badge-green'">
+                {{ b.is_master ? '母号' : '子号' }}
+              </span>
+            </td>
+            <td>{{ b.expire_time || '永不过期' }}</td>
+            <td>
+              <span class="badge" :class="b.is_active ? 'badge-green' : 'badge-red'">
+                {{ b.is_active ? '正常' : '停用' }}
+              </span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<script>
+const { createApp, ref, onMounted } = Vue;
+createApp({
+  setup() {
+    const tab = ref('dashboard');
+    const stats = ref({ users: 0, lotteries: 0, bots: 0, revenue: 0 });
+    const users = ref([]);
+    const orders = ref([]);
+    const bots = ref([]);
+
+    const loadStats = async () => {
+      const res = await fetch('/api/admin/stats');
+      stats.value = await res.json();
+    };
+    const loadUsers = async () => {
+      const res = await fetch('/api/admin/users');
+      users.value = await res.json();
+    };
+    const loadOrders = async () => {
+      const res = await fetch('/api/admin/orders');
+      orders.value = await res.json();
+    };
+    const loadBots = async () => {
+      const res = await fetch('/api/admin/bots');
+      bots.value = await res.json();
+    };
+    const approve = async (id) => {
+      await fetch(`/api/admin/orders/${id}/approve`, { method: 'POST' });
+      loadOrders();
+    };
+
+    onMounted(loadStats);
+    return { tab, stats, users, orders, bots, loadUsers, loadOrders, loadBots, approve };
+  }
+}).mount('#app');
+</script>
+
+</body>
+</html>
