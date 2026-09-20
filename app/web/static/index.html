@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>创建抽奖 · LuckyDraw Cloud</title>
+<script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0a0a0f;
+    color: #fff;
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 24px 16px 60px;
+  }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .sub { color: rgba(255,255,255,0.35); font-size: 13px; margin-bottom: 24px; }
+  label { display: block; font-size: 13px; color: rgba(255,255,255,0.6); margin: 16px 0 6px; }
+  input, select, textarea {
+    width: 100%; padding: 12px 14px; border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04); color: #fff;
+    font-size: 15px; outline: none;
+  }
+  input:focus, select:focus, textarea:focus { border-color: #7c3aed; }
+  button {
+    width: 100%; padding: 16px; margin-top: 24px;
+    background: linear-gradient(135deg, #7c3aed, #6d28d9);
+    border: none; border-radius: 16px; color: #fff;
+    font-size: 17px; font-weight: 700; cursor: pointer;
+  }
+  button:hover { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+  .prize-row {
+    display: flex; gap: 8px; margin-bottom: 8px; align-items: center;
+  }
+  .prize-row input { flex: 1; }
+  .prize-row input.count { max-width: 90px; }
+  .prize-row button {
+    width: auto; padding: 8px 12px; margin: 0; font-size: 13px;
+    background: rgba(239,68,68,0.15); color: #ef4444;
+    border: 1px solid rgba(239,68,68,0.3);
+  }
+  .add-btn {
+    background: rgba(124,58,237,0.15); color: #a78bfa;
+    border: 1px solid rgba(124,58,237,0.3);
+    padding: 10px; font-size: 14px; margin-top: 4px;
+  }
+  .cover-preview { max-width: 100%; border-radius: 12px; margin-top: 8px; }
+  .badge {
+    display: inline-block; font-size: 11px; color: #8be9fd;
+    background: rgba(139,233,253,0.1); padding: 3px 10px;
+    border-radius: 20px; margin-left: 8px;
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <h1>🎯 创建抽奖 <span class="badge">区块链公证</span></h1>
+  <p class="sub">填写下方信息，一键发布到多个群组/频道</p>
+
+  <label>活动标题</label>
+  <input v-model="form.title" placeholder="如：周年庆超级抽奖">
+
+  <label>副标题（可选）</label>
+  <input v-model="form.subtitle" placeholder="如：回馈粉丝 · 总价值 ¥8000+">
+
+  <label>封面图链接（可选）</label>
+  <input v-model="form.cover_image" placeholder="https://example.com/cover.jpg">
+  <img v-if="form.cover_image" :src="form.cover_image" class="cover-preview" @error="form.cover_image=''">
+
+  <label>🏆 奖品列表</label>
+  <div v-for="(p, i) in form.prizes" :key="i" class="prize-row">
+    <input v-model="p.name" placeholder="奖品名称">
+    <input v-model.number="p.count" type="number" min="1" class="count" placeholder="数量">
+    <button @click="form.prizes.splice(i, 1)">✕</button>
+  </div>
+  <button class="add-btn" @click="form.prizes.push({name:'', count:1})">➕ 添加奖品</button>
+
+  <label>📤 发布目标（每行一个，支持 t.me 链接或 Chat ID）</label>
+  <textarea v-model="targetsText" rows="3" placeholder="https://t.me/my_channel&#10;-1001234567890"></textarea>
+
+  <label>🔒 强制关注频道（每行一个，可留空）</label>
+  <textarea v-model="channelsText" rows="2" placeholder="@channel1&#10;@channel2"></textarea>
+
+  <label>⏰ 开奖方式</label>
+  <select v-model="form.draw_mode">
+    <option value="time">定时开奖</option>
+    <option value="count">满员开奖</option>
+    <option value="instant">即时开奖</option>
+  </select>
+
+  <label v-if="form.draw_mode === 'time'">开奖时间</label>
+  <input v-if="form.draw_mode === 'time'" type="datetime-local" v-model="form.draw_time">
+
+  <label v-if="form.draw_mode === 'count'">目标参与人数</label>
+  <input v-if="form.draw_mode === 'count'" type="number" v-model.number="form.target_count">
+
+  <button @click="submit">🚀 发布抽奖</button>
+</div>
+
+<script>
+const { createApp, ref } = Vue;
+createApp({
+  setup() {
+    const uid = {{UID}};
+    const form = ref({
+      title: '',
+      subtitle: '',
+      cover_image: '',
+      prizes: [{ name: '', count: 1 }],
+      draw_mode: 'time',
+      draw_time: '',
+      target_count: 50,
+    });
+    const targetsText = ref('');
+    const channelsText = ref('');
+
+    const submit = async () => {
+      const payload = {
+        uid,
+        ...form.value,
+        targets: targetsText.value.split('\n').map(s => s.trim()).filter(Boolean),
+        channels: channelsText.value.split('\n').map(s => s.trim()).filter(Boolean),
+      };
+      const res = await fetch('/api/lottery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      alert(data.ok ? '✅ 抽奖创建成功！' : '❌ 创建失败：' + data.message);
+    };
+
+    return { form, targetsText, channelsText, submit };
+  }
+}).mount('#app');
+</script>
+
+</body>
+</html>
