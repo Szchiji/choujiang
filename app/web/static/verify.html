@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>区块链公正性验证 · LuckyDraw Cloud</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #0a0a0f; color: #fff;
+    max-width: 640px; margin: 0 auto; padding: 32px 20px;
+  }
+  h1 { font-size: 22px; }
+  .box {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px; padding: 20px; margin: 20px 0;
+  }
+  .hash {
+    font-family: 'SF Mono', monospace; font-size: 13px;
+    word-break: break-all; color: #8be9fd;
+    background: rgba(0,0,0,0.4); padding: 12px; border-radius: 8px;
+  }
+  .step { border-left: 3px solid #fbbf24; padding-left: 16px; margin: 20px 0; }
+  a { color: #8b5cf6; }
+  .label { color: rgba(255,255,255,0.4); font-size: 12px; }
+</style>
+</head>
+<body>
+
+<h1>🔗 开奖公正性自证</h1>
+<p style="color:rgba(255,255,255,0.5);">以下数据来自比特币主链，任何人可独立验证。</p>
+
+<div class="box">
+  <p><span class="label">比特币区块高度</span><br><b>{{BLOCK_HEIGHT}}</b></p>
+  <p><span class="label">区块哈希</span></p>
+  <div class="hash">{{BLOCK_HASH}}</div>
+  <p style="margin-top:16px;"><span class="label">活动 ID</span><br><b>LK-{{LOTTERY_ID}}</b></p>
+  <p>
+    👉 <a href="https://blockchair.com/bitcoin/block/{{BLOCK_HEIGHT}}" target="_blank">
+    在区块链浏览器中核对此区块</a>
+  </p>
+</div>
+
+<div class="step">
+  <h3>✅ 如何自行验证？</h3>
+  <ol>
+    <li>复制上方区块哈希</li>
+    <li>打开任意 SHA256 在线工具（如 <a href="https://emn178.github.io/online-tools/sha256.html" target="_blank">这个</a>）</li>
+    <li>输入：<code>区块哈希 + 活动ID + 开奖时间戳</code>，计算 SHA256</li>
+    <li>用该结果作为随机种子，对参与名单排序，前 N 名即中奖者</li>
+  </ol>
+  <p><b>任何人都可以复现此过程，确保平台无内幕。</b></p>
+</div>
+
+</body>
+</html>
