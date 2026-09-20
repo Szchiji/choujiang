@@ -4,11 +4,7 @@ from aiogram.types import ChatMember
 
 
 async def check_channels(bot: Bot, user_id: int, channels: List[str]) -> dict:
-    """
-    校验用户是否关注了所有指定频道。
-    channels 支持：@username 或 -100xxx（数字 Chat ID）
-    返回: {"ok": True/False, "failed": [未关注的频道]}
-    """
+    """校验用户是否关注了所有指定频道"""
     if not channels:
         return {"ok": True, "failed": []}
 
@@ -33,13 +29,11 @@ async def check_channels(bot: Bot, user_id: int, channels: List[str]) -> dict:
 
 
 async def check_channels_for_draw(bot: Bot, user_id: int, channels: List[str]) -> bool:
-    """开奖前二次校验"""
     result = await check_channels(bot, user_id, channels)
     return result["ok"]
 
 
 def build_channel_links(channels: List[str]) -> str:
-    """构建频道链接提示文本"""
     lines = []
     for ch in channels:
         if ch.startswith("@"):
