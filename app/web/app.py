@@ -17,8 +17,11 @@ STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
+# ==================== 页面路由 ====================
+
 @app.get("/create", response_class=HTMLResponse)
 async def create_page(uid: int = 0):
+    """创建抽奖页面"""
     html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
     html = html.replace("{{UID}}", str(uid))
     return HTMLResponse(content=html)
@@ -26,6 +29,7 @@ async def create_page(uid: int = 0):
 
 @app.get("/verify", response_class=HTMLResponse)
 async def verify_page(block: int = 0, hash: str = "", lottery: int = 0):
+    """区块链验证页面"""
     html = (STATIC_DIR / "verify.html").read_text(encoding="utf-8")
     html = html.replace("{{BLOCK_HEIGHT}}", str(block))
     html = html.replace("{{BLOCK_HASH}}", hash)
@@ -35,24 +39,48 @@ async def verify_page(block: int = 0, hash: str = "", lottery: int = 0):
 
 @app.get("/plaza", response_class=HTMLResponse)
 async def plaza_page():
+    """LuckyDraw 广场"""
     html = (STATIC_DIR / "plaza.html").read_text(encoding="utf-8")
     return HTMLResponse(content=html)
 
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_page():
+    """管理后台（自动注入 admin token）"""
     html = (STATIC_DIR / "admin.html").read_text(encoding="utf-8")
+    html = html.replace("{{ADMIN_TOKEN}}", settings.safe_webhook_secret)
     return HTMLResponse(content=html)
 
 
+# ==================== 业务 API ====================
+
 @app.post("/api/lottery")
 async def create_lottery_api(request: Request):
+    """创建抽奖（Web 后台表单提交）"""
     data = await request.json()
-    return JSONResponse({"ok": True, "message": "抽奖创建成功"})
+
+    # 基础校验
+    if not data.get("title"):
+        return JSONResponse({"ok": False, "message": "标题不能为空"}, status_code=400)
+
+    if not data.get("prizes") or len(data["prizes"]) == 0:
+        return JSONResponse({"ok": False, "message": "至少需要一个奖品"}, status_code=400)
+
+    if not data.get("targets") or len(data["targets"]) == 0:
+        return JSONResponse({"ok": False, "message": "至少需要一个发布目标"}, status_code=400)
+
+    # TODO: 校验用户配额 + 存入数据库 + 调用 Bot 发送消息
+    # 当前版本仅返回成功，实际逻辑需结合 bot 实例
+    return JSONResponse({
+        "ok": True,
+        "message": "抽奖创建成功",
+        "lottery_id": 0,
+    })
 
 
 @app.get("/api/plaza")
 async def api_plaza(q: str = ""):
+    """LuckyDraw 广场：返回公开进行中的抽奖"""
     async with async_session() as db:
         stmt = (
             select(Lottery)
@@ -68,11 +96,13 @@ async def api_plaza(q: str = ""):
 
         items = []
         for lot in lotteries:
+            # 参与人数
             count_stmt = select(func.count(Participant.id)).where(
                 Participant.lottery_id == lot.id
             )
             count = (await db.execute(count_stmt)).scalar() or 0
 
+            # 倒计时
             countdown = "待定"
             if lot.draw_time:
                 delta = lot.draw_time - datetime.now()
@@ -95,11 +125,14 @@ async def api_plaza(q: str = ""):
                 "bot_link": f"https://t.me/your_bot?start=lottery_{lot.id}",
             })
 
+        # 全局统计
         total = (await db.execute(select(func.count(Lottery.id)))).scalar() or 0
         ongoing = (await db.execute(
             select(func.count(Lottery.id)).where(Lottery.status == "ongoing")
         )).scalar() or 0
-        participants = (await db.execute(select(func.count(Participant.id)))).scalar() or 0
+        participants = (await db.execute(
+            select(func.count(Participant.id))
+        )).scalar() or 0
 
         return {
             "lotteries": items,
@@ -112,27 +145,40 @@ async def api_plaza(q: str = ""):
         }
 
 
+# ==================== 管理后台 API ====================
+
 def _check_admin(token: str):
-    if token != settings.WEBHOOK_SECRET:
+    """校验管理员 token（使用清理后的 secret）"""
+    if not token or token != settings.safe_webhook_secret:
         raise HTTPException(status_code=403, detail="Forbidden")
 
 
 @app.get("/api/admin/stats")
 async def admin_stats(x_admin_token: str = Header(None)):
+    """平台统计数据"""
     _check_admin(x_admin_token)
     async with async_session() as db:
-        users = (await db.execute(select(func.count(UserMeta.user_id)))).scalar() or 0
-        lotteries = (await db.execute(select(func.count(Lottery.id)))).scalar() or 0
+        users = (await db.execute(
+            select(func.count(UserMeta.user_id))
+        )).scalar() or 0
+
+        lotteries = (await db.execute(
+            select(func.count(Lottery.id))
+        )).scalar() or 0
+
         bots = (await db.execute(
             select(func.count(Bot.id)).where(
-                Bot.is_master == False, Bot.is_active == True
+                Bot.is_master == False,
+                Bot.is_active == True,
             )
         )).scalar() or 0
+
         orders = (await db.execute(
             select(func.count(CloneApplication.id)).where(
                 CloneApplication.status.in_(["paid", "approved"])
             )
         )).scalar() or 0
+
         return {
             "users": users,
             "lotteries": lotteries,
@@ -143,18 +189,23 @@ async def admin_stats(x_admin_token: str = Header(None)):
 
 @app.get("/api/admin/users")
 async def admin_users(x_admin_token: str = Header(None)):
+    """用户列表"""
     _check_admin(x_admin_token)
     async with async_session() as db:
         rows = (await db.execute(
             select(UserMeta).order_by(desc(UserMeta.created_at)).limit(200)
         )).scalars().all()
+
         return [
             {
                 "user_id": u.user_id,
                 "sign_in_streak": u.sign_in_streak or 0,
                 "extra_credits": u.extra_credits or 0,
                 "referral_count": u.referral_count or 0,
-                "created_at": u.created_at.strftime("%Y-%m-%d") if u.created_at else "",
+                "created_at": (
+                    u.created_at.strftime("%Y-%m-%d")
+                    if u.created_at else ""
+                ),
             }
             for u in rows
         ]
@@ -162,6 +213,7 @@ async def admin_users(x_admin_token: str = Header(None)):
 
 @app.get("/api/admin/orders")
 async def admin_orders(x_admin_token: str = Header(None)):
+    """订单列表"""
     _check_admin(x_admin_token)
     async with async_session() as db:
         rows = (await db.execute(
@@ -169,13 +221,17 @@ async def admin_orders(x_admin_token: str = Header(None)):
             .order_by(desc(CloneApplication.created_at))
             .limit(200)
         )).scalars().all()
+
         return [
             {
                 "id": o.id,
                 "user_id": o.user_id,
                 "plan": o.plan,
                 "status": o.status,
-                "created_at": o.created_at.strftime("%Y-%m-%d %H:%M") if o.created_at else "",
+                "created_at": (
+                    o.created_at.strftime("%Y-%m-%d %H:%M")
+                    if o.created_at else ""
+                ),
             }
             for o in rows
         ]
@@ -183,22 +239,31 @@ async def admin_orders(x_admin_token: str = Header(None)):
 
 @app.post("/api/admin/orders/{order_id}/approve")
 async def admin_approve(order_id: int, x_admin_token: str = Header(None)):
+    """批准订单"""
     _check_admin(x_admin_token)
     async with async_session() as db:
-        await db.execute(
+        result = await db.execute(
             update(CloneApplication)
             .where(CloneApplication.id == order_id)
             .values(status="approved", processed_at=datetime.now())
         )
         await db.commit()
-    return {"ok": True}
+
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="订单不存在")
+
+    return {"ok": True, "message": "已批准"}
 
 
 @app.get("/api/admin/bots")
 async def admin_bots(x_admin_token: str = Header(None)):
+    """机器人列表"""
     _check_admin(x_admin_token)
     async with async_session() as db:
-        rows = (await db.execute(select(Bot).limit(200))).scalars().all()
+        rows = (await db.execute(
+            select(Bot).order_by(desc(Bot.created_at)).limit(200)
+        )).scalars().all()
+
         return [
             {
                 "id": b.id,
@@ -206,7 +271,10 @@ async def admin_bots(x_admin_token: str = Header(None)):
                 "bot_username": b.bot_username,
                 "is_master": b.is_master,
                 "is_active": b.is_active,
-                "expire_time": b.expire_time.strftime("%Y-%m-%d") if b.expire_time else None,
+                "expire_time": (
+                    b.expire_time.strftime("%Y-%m-%d")
+                    if b.expire_time else None
+                ),
             }
             for b in rows
         ]
