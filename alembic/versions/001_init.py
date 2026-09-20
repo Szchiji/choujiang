@@ -17,7 +17,6 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # ========== bots ==========
     op.create_table(
         "bots",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -30,7 +29,6 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(), server_default=sa.func.now()),
     )
 
-    # ========== lotteries ==========
     op.create_table(
         "lotteries",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -52,7 +50,6 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(), server_default=sa.func.now()),
     )
 
-    # ========== participants ==========
     op.create_table(
         "participants",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -64,7 +61,6 @@ def upgrade() -> None:
     op.create_index("ix_participants_lottery", "participants", ["lottery_id"])
     op.create_index("ix_participants_user", "participants", ["user_id"])
 
-    # ========== user_meta ==========
     op.create_table(
         "user_meta",
         sa.Column("user_id", sa.BigInteger(), primary_key=True),
@@ -78,7 +74,6 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(), server_default=sa.func.now()),
     )
 
-    # ========== clone_applications ==========
     op.create_table(
         "clone_applications",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -91,7 +86,6 @@ def upgrade() -> None:
         sa.Column("processed_at", sa.DateTime(), nullable=True),
     )
 
-    # ========== referrals ==========
     op.create_table(
         "referrals",
         sa.Column("id", sa.Integer(), primary_key=True),
