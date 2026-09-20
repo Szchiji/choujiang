@@ -16,18 +16,23 @@ dp.include_router(admin.router)
 dp.include_router(payment.router)
 dp.include_router(checkin.router)
 
+# 使用清理后的 secret
+SAFE_SECRET = settings.safe_webhook_secret
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 启动
     await init_db()
+
     try:
         await bot.set_webhook(
             url=settings.WEBHOOK_URL,
-            secret_token=settings.WEBHOOK_SECRET,
+            secret_token=SAFE_SECRET,
             drop_pending_updates=True,
         )
         print(f"✅ Webhook 已设置：{settings.WEBHOOK_URL}")
+        print(f"✅ Secret 长度：{len(SAFE_SECRET)}")
     except Exception as e:
         print(f"⚠️ Webhook 设置失败：{e}")
 
@@ -51,7 +56,7 @@ app = FastAPI(title="LuckyDraw Cloud", lifespan=lifespan)
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
-    if secret != settings.WEBHOOK_SECRET:
+    if secret != SAFE_SECRET:
         raise HTTPException(status_code=403, detail="Invalid secret token")
     update = types.Update.model_validate(await request.json())
     await dp.feed_update(bot, update)
@@ -63,5 +68,6 @@ async def health():
     return {"status": "ok"}
 
 
+# ==================== 挂载 Web 页面 ====================
 from app.web.app import app as web_app
 app.mount("/", web_app)
