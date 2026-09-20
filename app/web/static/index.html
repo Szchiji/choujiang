@@ -9,11 +9,8 @@
   * { box-sizing: border-box; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: #0a0a0f;
-    color: #fff;
-    max-width: 560px;
-    margin: 0 auto;
-    padding: 24px 16px 60px;
+    background: #0a0a0f; color: #fff;
+    max-width: 560px; margin: 0 auto; padding: 24px 16px 60px;
   }
   h1 { font-size: 22px; margin-bottom: 4px; }
   .sub { color: rgba(255,255,255,0.35); font-size: 13px; margin-bottom: 24px; }
@@ -32,9 +29,7 @@
     font-size: 17px; font-weight: 700; cursor: pointer;
   }
   button:hover { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
-  .prize-row {
-    display: flex; gap: 8px; margin-bottom: 8px; align-items: center;
-  }
+  .prize-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
   .prize-row input { flex: 1; }
   .prize-row input.count { max-width: 90px; }
   .prize-row button {
@@ -56,7 +51,6 @@
 </style>
 </head>
 <body>
-
 <div id="app">
   <h1>🎯 创建抽奖 <span class="badge">区块链公证</span></h1>
   <p class="sub">填写下方信息，一键发布到多个群组/频道</p>
@@ -79,10 +73,10 @@
   </div>
   <button class="add-btn" @click="form.prizes.push({name:'', count:1})">➕ 添加奖品</button>
 
-  <label>📤 发布目标（每行一个，支持 t.me 链接或 Chat ID）</label>
+  <label>📤 发布目标（每行一个）</label>
   <textarea v-model="targetsText" rows="3" placeholder="https://t.me/my_channel&#10;-1001234567890"></textarea>
 
-  <label>🔒 强制关注频道（每行一个，可留空）</label>
+  <label>🔒 强制关注频道（每行一个）</label>
   <textarea v-model="channelsText" rows="2" placeholder="@channel1&#10;@channel2"></textarea>
 
   <label>⏰ 开奖方式</label>
@@ -107,13 +101,9 @@ createApp({
   setup() {
     const uid = {{UID}};
     const form = ref({
-      title: '',
-      subtitle: '',
-      cover_image: '',
+      title: '', subtitle: '', cover_image: '',
       prizes: [{ name: '', count: 1 }],
-      draw_mode: 'time',
-      draw_time: '',
-      target_count: 50,
+      draw_mode: 'time', draw_time: '', target_count: 50,
     });
     const targetsText = ref('');
     const channelsText = ref('');
@@ -138,6 +128,5 @@ createApp({
   }
 }).mount('#app');
 </script>
-
 </body>
 </html>
