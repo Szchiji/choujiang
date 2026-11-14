@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>LuckyDraw</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+<style>
+  :root {
+    --bg: var(--tg-theme-bg-color, #0a0a0f);
+    --text: var(--tg-theme-text-color, #fff);
+    --hint: var(--tg-theme-hint-color, rgba(255,255,255,0.4));
+    --link: var(--tg-theme-link-color, #8b5cf6);
+    --btn: var(--tg-theme-button-color, #7c3aed);
+    --btn-text: var(--tg-theme-button-text-color, #fff);
+    --secondary: var(--tg-theme-secondary-bg-color, rgba(255,255,255,0.04));
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh; padding-bottom: 70px;
+  }
+  .header {
+    padding: 16px; text-align: center;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .logo {
+    font-size: 20px; font-weight: 800;
+    background: linear-gradient(135deg, #8be9fd, #fbbf24);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .content { padding: 16px; }
+  .tabs {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    display: flex; background: var(--secondary);
+    border-top: 1px solid rgba(255,255,255,0.08);
+    padding: 8px 0 env(safe-area-inset-bottom);
+  }
+  .tab {
+    flex: 1; text-align: center; padding: 8px 4px;
+    font-size: 11px; color: var(--hint); cursor: pointer;
+  }
+  .tab.active { color: var(--link); }
+  .tab-icon { font-size: 20px; display: block; margin-bottom: 2px; }
+  input, select, textarea {
+    width: 100%; padding: 12px; border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: var(--secondary); color: var(--text);
+    font-size: 15px; outline: none; margin-bottom: 8px;
+  }
+  label { display: block; font-size: 13px; color: var(--hint); margin: 12px 0 4px; }
+  .card {
+    background: var(--secondary);
+    border-radius: 16px; padding: 14px; margin-bottom: 12px;
+  }
+  .card-title { font-weight: 700; margin-bottom: 4px; }
+  .card-sub { font-size: 13px; color: var(--hint); }
+  .prize-row { display: flex; gap: 8px; margin-bottom: 8px; }
+  .prize-row input { flex: 1; margin: 0; }
+  .prize-row input.count { max-width: 70px; }
+  .add-btn {
+    background: rgba(124,58,237,0.15); color: #a78bfa;
+    border: 1px dashed rgba(124,58,237,0.4);
+    padding: 10px; border-radius: 12px; text-align: center;
+    cursor: pointer; margin-bottom: 12px;
+  }
+  .check-row { display: flex; align-items: center; gap: 8px; margin: 12px 0; }
+  .check-row input { width: auto; margin: 0; }
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stat {
+    background: var(--secondary); border-radius: 12px; padding: 14px; text-align: center;
+  }
+  .stat-val { font-size: 22px; font-weight: 800; color: #fbbf24; }
+  .stat-lbl { font-size: 11px; color: var(--hint); margin-top: 2px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="header"><div class="logo">✦ LuckyDraw</div></div>
+
+  <!-- Create Tab -->
+  <div class="content" v-if="tab === 'create'">
+    <label>活动标题</label>
+    <input v-model="form.title" placeholder="周年庆超级抽奖">
+    <label>副标题</label>
+    <input v-model="form.subtitle" placeholder="回馈粉丝">
+    <label>🏆 奖品</label>
+    <div v-for="(p, i) in form.prizes" :key="i" class="prize-row">
+      <input v-model="p.name" placeholder="奖品名">
+      <input v-model.number="p.count" type="number" min="1" class="count" placeholder="数量">
+    </div>
+    <div class="add-btn" @click="form.prizes.push({name:'', count:1})">➕ 添加奖品</div>
+    <label>📤 发布目标（每行一个）</label>
+    <textarea v-model="targetsText" rows="2" placeholder="@channel 或 -100xxx"></textarea>
+    <label>🔒 强制关注</label>
+    <textarea v-model="channelsText" rows="2" placeholder="@channel"></textarea>
+    <label>开奖方式</label>
+    <select v-model="form.draw_mode">
+      <option value="time">定时</option>
+      <option value="count">满员</option>
+      <option value="instant">即时</option>
+    </select>
+    <input v-if="form.draw_mode==='time'" type="datetime-local" v-model="form.draw_time">
+    <input v-if="form.draw_mode==='count'" type="number" v-model.number="form.target_count" placeholder="目标人数">
+    <div class="check-row">
+      <input type="checkbox" id="pub" v-model="form.is_public">
+      <label for="pub" style="margin:0;">公开到广场</label>
+    </div>
+  </div>
+
+  <!-- My Tab -->
+  <div class="content" v-if="tab === 'my'">
+    <div v-if="myList.length === 0" style="text-align:center;color:var(--hint);padding:40px 0;">暂无抽奖</div>
+    <div v-for="l in myList" :key="l.id" class="card">
+      <div class="card-title">{{ l.title }}</div>
+      <div class="card-sub">{{ l.status }} · {{ l.participants }} 人参与</div>
+    </div>
+  </div>
+
+  <!-- Plaza Tab -->
+  <div class="content" v-if="tab === 'plaza'">
+    <div v-if="plaza.length === 0" style="text-align:center;color:var(--hint);padding:40px 0;">暂无公开抽奖</div>
+    <div v-for="l in plaza" :key="l.id" class="card" @click="openLottery(l)">
+      <div class="card-title">{{ l.title }}</div>
+      <div class="card-sub">{{ l.subtitle || '点击参与' }} · {{ l.participants }} 人</div>
+    </div>
+  </div>
+
+  <!-- Profile Tab -->
+  <div class="content" v-if="tab === 'me'">
+    <div class="stat-grid">
+      <div class="stat"><div class="stat-val">{{ me.extra_credits || 0 }}</div><div class="stat-lbl">额外次数</div></div>
+      <div class="stat"><div class="stat-val">{{ me.sign_in_streak || 0 }}</div><div class="stat-lbl">连续签到</div></div>
+      <div class="stat"><div class="stat-val">{{ me.referral_count || 0 }}</div><div class="stat-lbl">邀请人数</div></div>
+      <div class="stat"><div class="stat-val">{{ me.free_quota || 0 }}</div><div class="stat-lbl">今日免费</div></div>
+    </div>
+    <div style="margin-top:20px;text-align:center;">
+      <div class="add-btn" @click="doCheckin">📅 签到</div>
+      <div class="add-btn" @click="showInvite">🎁 邀请好友</div>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab" :class="{active: tab==='create'}" @click="tab='create'"><span class="tab-icon">➕</span>创建</div>
+    <div class="tab" :class="{active: tab==='my'}" @click="switchTab('my')"><span class="tab-icon">📋</span>我的</div>
+    <div class="tab" :class="{active: tab==='plaza'}" @click="switchTab('plaza')"><span class="tab-icon">🌐</span>广场</div>
+    <div class="tab" :class="{active: tab==='me'}" @click="switchTab('me')"><span class="tab-icon">👤</span>我</div>
+  </div>
+</div>
+
+<script>
+const tg = window.Telegram?.WebApp;
+if (tg) {
+  tg.ready();
+  tg.expand();
+  tg.setHeaderColor('#0a0a0f');
+  tg.setBackgroundColor('#0a0a0f');
+}
+
+const { createApp, ref, watch } = Vue;
+createApp({
+  setup() {
+    const user = tg?.initDataUnsafe?.user || {};
+    const uid = user.id || new URLSearchParams(location.search).get('uid') || 0;
+    const tab = ref('create');
+    const form = ref({
+      title: '', subtitle: '', prizes: [{name:'', count:1}],
+      draw_mode: 'time', draw_time: '', target_count: 50, is_public: true,
+    });
+    const targetsText = ref('');
+    const channelsText = ref('');
+    const myList = ref([]);
+    const plaza = ref([]);
+    const me = ref({});
+
+    const loadMy = async () => {
+      const res = await fetch(`/api/dashboard?uid=${uid}`);
+      const data = await res.json();
+      myList.value = data.lotteries || [];
+    };
+    const loadPlaza = async () => {
+      const res = await fetch('/api/plaza');
+      const data = await res.json();
+      plaza.value = data.lotteries || [];
+    };
+    const loadMe = async () => {
+      const res = await fetch(`/api/me?uid=${uid}`);
+      me.value = await res.json();
+    };
+
+    const switchTab = (t) => {
+      tab.value = t;
+      if (t === 'my') loadMy();
+      if (t === 'plaza') loadPlaza();
+      if (t === 'me') loadMe();
+    };
+
+    const submit = async () => {
+      const payload = {
+        uid,
+        ...form.value,
+        targets: targetsText.value.split('\n').map(s => s.trim()).filter(Boolean),
+        channels: channelsText.value.split('\n').map(s => s.trim()).filter(Boolean),
+      };
+      const res = await fetch('/api/lottery', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (tg) {
+        tg.showAlert(data.ok ? '✅ 创建成功' : '❌ ' + data.message);
+        if (data.ok) tg.close();
+      } else {
+        alert(data.ok ? '成功' : data.message);
+      }
+    };
+
+    const doCheckin = async () => {
+      const res = await fetch(`/api/checkin?uid=${uid}`, {method: 'POST'});
+      const data = await res.json();
+      if (tg) tg.showAlert(data.message || '签到完成');
+      loadMe();
+    };
+
+    const showInvite = () => {
+      const link = `https://t.me/${tg?.initDataUnsafe?.start_param || 'your_bot'}?start=ref_${uid}`;
+      if (tg) {
+        tg.showPopup({title: '邀请链接', message: link, buttons: [{type: 'ok'}]});
+      } else {
+        alert(link);
+      }
+    };
+
+    const openLottery = (l) => {
+      if (l.bot_link && tg) tg.openTelegramLink(l.bot_link);
+    };
+
+    // MainButton
+    if (tg) {
+      watch(tab, (t) => {
+        if (t === 'create') {
+          tg.MainButton.setText('🚀 发布抽奖').show().onClick(submit);
+        } else {
+          tg.MainButton.hide();
+        }
+      }, {immediate: true});
+    }
+
+    return {
+      tab, form, targetsText, channelsText,
+      myList, plaza, me,
+      switchTab, submit, doCheckin, showInvite, openLottery,
+    };
+  }
+}).mount('#app');
+</script>
+</body>
+</html>
