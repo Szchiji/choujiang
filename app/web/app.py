@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Header, HTTPException
@@ -11,6 +11,8 @@ from app.database import async_session
 from app.models import (
     Lottery, Participant, UserMeta, CloneApplication, Bot,
 )
+from app.bot_instance import get_bot
+from app.message_builder import build_lottery_message
 
 app = FastAPI(title="LuckyDraw Web")
 STATIC_DIR = Path(__file__).parent / "static"
@@ -52,29 +54,172 @@ async def admin_page():
     return HTMLResponse(content=html)
 
 
+# ==================== 配额与辅助函数 ====================
+
+async def check_and_deduct_quota(user_id: int) -> tuple[bool, str]:
+    """检查并扣减配额。优先使用 free_quota，然后 extra_credits。"""
+    async with async_session() as db:
+        meta = (await db.execute(
+            select(UserMeta).where(UserMeta.user_id == user_id)
+        )).scalar_one_or_none()
+
+        if not meta:
+            meta = UserMeta(
+                user_id=user_id,
+                free_quota=1,
+                extra_credits=0,
+                trial_start=datetime.now(),
+                trial_end=datetime.now() + timedelta(days=3),
+            )
+            db.add(meta)
+            await db.commit()
+            await db.refresh(meta)
+
+        # 首次使用自动开通试用
+        if not meta.trial_start:
+            meta.trial_start = datetime.now()
+            meta.trial_end = datetime.now() + timedelta(days=3)
+
+        if (meta.free_quota or 0) > 0:
+            meta.free_quota -= 1
+            await db.commit()
+            return True, "free"
+
+        if (meta.extra_credits or 0) > 0:
+            meta.extra_credits -= 1
+            await db.commit()
+            return True, "extra"
+
+        await db.commit()
+        return False, "配额不足，请签到、邀请好友或升级套餐"
+
+
+def normalize_chat_id(raw: str) -> str | int:
+    """把 t.me 链接、@username、-100xxx 统一成 Telegram 可接受的 chat_id"""
+    s = (raw or "").strip()
+    if not s:
+        return s
+    if s.startswith("https://t.me/"):
+        username = s.split("https://t.me/")[-1].split("/")[0].lstrip("@")
+        return f"@{username}" if username else s
+    if s.startswith("http://t.me/"):
+        username = s.split("http://t.me/")[-1].split("/")[0].lstrip("@")
+        return f"@{username}" if username else s
+    if s.startswith("@") or s.startswith("-"):
+        return s
+    if s.lstrip("-").isdigit():
+        return int(s)
+    return f"@{s}"
+
+
 # ==================== 业务 API ====================
 
 @app.post("/api/lottery")
 async def create_lottery_api(request: Request):
     """创建抽奖（Web 后台表单提交）"""
     data = await request.json()
+    uid = int(data.get("uid") or 0)
 
-    # 基础校验
+    if not uid:
+        return JSONResponse({"ok": False, "message": "缺少用户身份"}, status_code=400)
+
     if not data.get("title"):
         return JSONResponse({"ok": False, "message": "标题不能为空"}, status_code=400)
 
-    if not data.get("prizes") or len(data["prizes"]) == 0:
-        return JSONResponse({"ok": False, "message": "至少需要一个奖品"}, status_code=400)
+    prizes = data.get("prizes") or []
+    if not prizes or not any(p.get("name") for p in prizes):
+        return JSONResponse({"ok": False, "message": "至少需要一个有效奖品"}, status_code=400)
 
-    if not data.get("targets") or len(data["targets"]) == 0:
+    targets = data.get("targets") or []
+    if not targets:
         return JSONResponse({"ok": False, "message": "至少需要一个发布目标"}, status_code=400)
 
-    # TODO: 校验用户配额 + 存入数据库 + 调用 Bot 发送消息
-    # 当前版本仅返回成功，实际逻辑需结合 bot 实例
+    # 配额检查
+    ok, reason = await check_and_deduct_quota(uid)
+    if not ok:
+        return JSONResponse({"ok": False, "message": reason}, status_code=403)
+
+    # 解析开奖时间
+    draw_time = None
+    if data.get("draw_mode") == "time" and data.get("draw_time"):
+        try:
+            draw_time = datetime.fromisoformat(data["draw_time"].replace("Z", ""))
+        except Exception:
+            pass
+
+    # 入库
+    async with async_session() as db:
+        lottery = Lottery(
+            bot_id=uid,  # 母号阶段用创建者 user_id 代替，便于 /my 查询
+            title=data["title"],
+            subtitle=data.get("subtitle"),
+            cover_image=data.get("cover_image"),
+            prizes=prizes,
+            targets=targets,
+            channels=data.get("channels") or [],
+            draw_mode=data.get("draw_mode") or "time",
+            draw_time=draw_time,
+            target_count=data.get("target_count"),
+            status="ongoing",
+            is_public=True,
+        )
+        db.add(lottery)
+        await db.commit()
+        await db.refresh(lottery)
+        lottery_id = lottery.id
+
+    # 发布到目标群组/频道
+    bot = get_bot()
+    sent = 0
+    failed = []
+    if bot:
+        total_prizes = sum(p.get("count", 0) for p in prizes)
+        probability = (total_prizes / max(data.get("target_count") or 100, 1)) * 100
+        countdown = "等待开奖"
+        if draw_time:
+            delta = draw_time - datetime.now()
+            if delta.total_seconds() > 0:
+                d = delta.days
+                h = delta.seconds // 3600
+                m = (delta.seconds % 3600) // 60
+                countdown = f"{d}天{h}时{m}分"
+
+        text, keyboard = build_lottery_message(
+            lottery_id=lottery_id,
+            title=data["title"],
+            subtitle=data.get("subtitle") or "",
+            prizes=prizes,
+            cover_image=data.get("cover_image"),
+            participants=0,
+            countdown=countdown,
+            probability=min(probability, 100.0),
+            verify_url=f"{settings.PUBLIC_HOST}/verify?lottery={lottery_id}",
+        )
+
+        for raw_target in targets:
+            try:
+                chat_id = normalize_chat_id(raw_target)
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    reply_markup=keyboard,
+                    parse_mode="HTML",
+                    disable_web_page_preview=False,
+                )
+                sent += 1
+            except Exception as e:
+                failed.append(f"{raw_target}: {e}")
+
+    msg = f"抽奖创建成功，已发布到 {sent} 个目标"
+    if failed:
+        msg += f"，{len(failed)} 个失败"
+
     return JSONResponse({
         "ok": True,
-        "message": "抽奖创建成功",
-        "lottery_id": 0,
+        "message": msg,
+        "lottery_id": lottery_id,
+        "sent": sent,
+        "failed": failed,
     })
 
 
@@ -96,13 +241,11 @@ async def api_plaza(q: str = ""):
 
         items = []
         for lot in lotteries:
-            # 参与人数
             count_stmt = select(func.count(Participant.id)).where(
                 Participant.lottery_id == lot.id
             )
             count = (await db.execute(count_stmt)).scalar() or 0
 
-            # 倒计时
             countdown = "待定"
             if lot.draw_time:
                 delta = lot.draw_time - datetime.now()
@@ -125,7 +268,6 @@ async def api_plaza(q: str = ""):
                 "bot_link": f"https://t.me/your_bot?start=lottery_{lot.id}",
             })
 
-        # 全局统计
         total = (await db.execute(select(func.count(Lottery.id)))).scalar() or 0
         ongoing = (await db.execute(
             select(func.count(Lottery.id)).where(Lottery.status == "ongoing")
@@ -148,14 +290,12 @@ async def api_plaza(q: str = ""):
 # ==================== 管理后台 API ====================
 
 def _check_admin(token: str):
-    """校验管理员 token（使用清理后的 secret）"""
     if not token or token != settings.safe_webhook_secret:
         raise HTTPException(status_code=403, detail="Forbidden")
 
 
 @app.get("/api/admin/stats")
 async def admin_stats(x_admin_token: str = Header(None)):
-    """平台统计数据"""
     _check_admin(x_admin_token)
     async with async_session() as db:
         users = (await db.execute(
@@ -189,7 +329,6 @@ async def admin_stats(x_admin_token: str = Header(None)):
 
 @app.get("/api/admin/users")
 async def admin_users(x_admin_token: str = Header(None)):
-    """用户列表"""
     _check_admin(x_admin_token)
     async with async_session() as db:
         rows = (await db.execute(
@@ -213,7 +352,6 @@ async def admin_users(x_admin_token: str = Header(None)):
 
 @app.get("/api/admin/orders")
 async def admin_orders(x_admin_token: str = Header(None)):
-    """订单列表"""
     _check_admin(x_admin_token)
     async with async_session() as db:
         rows = (await db.execute(
@@ -239,25 +377,42 @@ async def admin_orders(x_admin_token: str = Header(None)):
 
 @app.post("/api/admin/orders/{order_id}/approve")
 async def admin_approve(order_id: int, x_admin_token: str = Header(None)):
-    """批准订单"""
+    """批准订单：更新状态并创建对应的 Bot 记录（占位，实际多 Bot 运行仍需后续完善）"""
     _check_admin(x_admin_token)
     async with async_session() as db:
-        result = await db.execute(
-            update(CloneApplication)
-            .where(CloneApplication.id == order_id)
-            .values(status="approved", processed_at=datetime.now())
-        )
-        await db.commit()
+        app_row = (await db.execute(
+            select(CloneApplication).where(CloneApplication.id == order_id)
+        )).scalar_one_or_none()
 
-        if result.rowcount == 0:
+        if not app_row:
             raise HTTPException(status_code=404, detail="订单不存在")
 
-    return {"ok": True, "message": "已批准"}
+        app_row.status = "approved"
+        app_row.processed_at = datetime.now()
+
+        # 创建 Bot 记录（如果还没有）
+        existing = (await db.execute(
+            select(Bot).where(Bot.owner_id == app_row.user_id, Bot.is_master == False)
+        )).scalar_one_or_none()
+
+        if not existing:
+            days = {"monthly": 30, "yearly": 365, "lifetime": 36500}.get(app_row.plan, 30)
+            db.add(Bot(
+                owner_id=app_row.user_id,
+                bot_token=app_row.bot_token or f"placeholder_{app_row.user_id}",
+                bot_username=app_row.bot_name or f"clone_{app_row.user_id}",
+                is_master=False,
+                is_active=True,
+                expire_time=datetime.now() + timedelta(days=days),
+            ))
+
+        await db.commit()
+
+    return {"ok": True, "message": "已批准并创建子号记录"}
 
 
 @app.get("/api/admin/bots")
 async def admin_bots(x_admin_token: str = Header(None)):
-    """机器人列表"""
     _check_admin(x_admin_token)
     async with async_session() as db:
         rows = (await db.execute(
