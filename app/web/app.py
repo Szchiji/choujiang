@@ -11,22 +11,22 @@ from sqlalchemy import select, func, desc, update
 from app.config import settings
 from app.database import async_session
 from app.models import (
-    Lottery, Participant, UserMeta, CloneApplication, Bot,
+    Lottery, Participant, UserMeta, CloneApplication, Bot, LotteryTemplate,
 )
 from app.bot_instance import get_bot
 from app.message_builder import build_lottery_message
+from app.crypto_util import encrypt_token
 
 app = FastAPI(title="LuckyDraw Web")
 STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
-# ==================== 页面路由 ====================
-
 @app.get("/create", response_class=HTMLResponse)
-async def create_page(uid: int = 0):
+async def create_page(uid: int = 0, tpl: int = 0):
     html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
     html = html.replace("{{UID}}", str(uid))
+    html = html.replace("{{TPL}}", str(tpl))
     return HTMLResponse(content=html)
 
 
@@ -52,10 +52,69 @@ async def admin_page():
     return HTMLResponse(content=html)
 
 
-# ==================== 配额与辅助函数 ====================
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard_page(uid: int = 0):
+    html = (STATIC_DIR / "dashboard.html").read_text(encoding="utf-8")
+    return HTMLResponse(content=html)
+
+
+@app.get("/api/dashboard")
+async def api_dashboard(uid: int = 0):
+    if not uid:
+        return {"lotteries": [], "stats": {"total": 0, "ongoing": 0, "participants": 0}}
+
+    async with async_session() as db:
+        rows = (await db.execute(
+            select(Lottery)
+            .where(Lottery.bot_id == uid)
+            .order_by(desc(Lottery.created_at))
+            .limit(50)
+        )).scalars().all()
+
+        items = []
+        total_participants = 0
+        ongoing = 0
+        for lot in rows:
+            count = (await db.execute(
+                select(func.count(Participant.id)).where(Participant.lottery_id == lot.id)
+            )).scalar() or 0
+            total_participants += count
+            if lot.status == "ongoing":
+                ongoing += 1
+            items.append({
+                "id": lot.id,
+                "title": lot.title,
+                "status": lot.status,
+                "participants": count,
+                "created_at": lot.created_at.strftime("%Y-%m-%d %H:%M") if lot.created_at else "",
+            })
+
+        return {
+            "lotteries": items,
+            "stats": {
+                "total": len(rows),
+                "ongoing": ongoing,
+                "participants": total_participants,
+            },
+        }
+
+
+@app.get("/api/template/{tpl_id}")
+async def get_template(tpl_id: int, uid: int = 0):
+    async with async_session() as db:
+        tpl = (await db.execute(
+            select(LotteryTemplate).where(
+                LotteryTemplate.id == tpl_id,
+                LotteryTemplate.owner_id == uid,
+            )
+        )).scalar_one_or_none()
+
+    if not tpl:
+        return JSONResponse({"ok": False}, status_code=404)
+    return {"ok": True, "config": tpl.config}
+
 
 async def check_and_deduct_quota(user_id: int) -> tuple[bool, str]:
-    """检查并扣减配额。优先 free_quota，然后 extra_credits。试用到期且无额外次数则拒绝。"""
     async with async_session() as db:
         meta = (await db.execute(
             select(UserMeta).where(UserMeta.user_id == user_id)
@@ -77,7 +136,6 @@ async def check_and_deduct_quota(user_id: int) -> tuple[bool, str]:
             meta.trial_start = datetime.now()
             meta.trial_end = datetime.now() + timedelta(days=3)
 
-        # 试用到期检查
         trial_expired = meta.trial_end and meta.trial_end < datetime.now()
         has_active_clone = False
         clone = (await db.execute(
@@ -126,7 +184,6 @@ def normalize_chat_id(raw: str) -> str | int:
 
 
 async def get_bot_username() -> str:
-    """获取当前母号用户名，用于广场链接"""
     bot = get_bot()
     if bot:
         try:
@@ -136,8 +193,6 @@ async def get_bot_username() -> str:
             pass
     return "your_bot"
 
-
-# ==================== 业务 API ====================
 
 @app.post("/api/lottery")
 async def create_lottery_api(request: Request):
@@ -234,7 +289,6 @@ async def create_lottery_api(request: Request):
             except Exception as e:
                 failed.append(f"{raw_target}: {e}")
 
-        # 即时开奖模式：创建后立即尝试开奖（通常参与者为 0，会被取消）
         if data.get("draw_mode") == "instant":
             from app.lottery_service import execute_draw
             async with async_session() as db:
@@ -320,7 +374,6 @@ async def api_plaza(q: str = ""):
 
 @app.get("/api/admin/export/participants")
 async def export_participants(lottery_id: int, x_admin_token: str = Header(None)):
-    """导出某个抽奖的参与者列表为 CSV"""
     _check_admin(x_admin_token)
     async with async_session() as db:
         rows = (await db.execute(
@@ -345,8 +398,6 @@ async def export_participants(lottery_id: int, x_admin_token: str = Header(None)
     )
 
 
-# ==================== 管理后台 API ====================
-
 def _check_admin(token: str):
     if not token or token != settings.safe_webhook_secret:
         raise HTTPException(status_code=403, detail="Forbidden")
@@ -361,17 +412,18 @@ async def admin_stats(x_admin_token: str = Header(None)):
         bots = (await db.execute(
             select(func.count(Bot.id)).where(Bot.is_master == False, Bot.is_active == True)
         )).scalar() or 0
-        orders = (await db.execute(
-            select(func.count(CloneApplication.id)).where(
-                CloneApplication.status.in_(["paid", "approved"])
-            )
+
+        # 真实收入
+        revenue = (await db.execute(
+            select(func.coalesce(func.sum(CloneApplication.amount_stars), 0))
+            .where(CloneApplication.status.in_(["paid", "approved"]))
         )).scalar() or 0
 
         return {
             "users": users,
             "lotteries": lotteries,
             "bots": bots,
-            "revenue": orders * 500,
+            "revenue": revenue,
         }
 
 
@@ -409,6 +461,7 @@ async def admin_orders(x_admin_token: str = Header(None)):
                 "user_id": o.user_id,
                 "plan": o.plan,
                 "status": o.status,
+                "amount_stars": o.amount_stars or 0,
                 "created_at": o.created_at.strftime("%Y-%m-%d %H:%M") if o.created_at else "",
             }
             for o in rows
@@ -435,9 +488,11 @@ async def admin_approve(order_id: int, x_admin_token: str = Header(None)):
 
         if not existing:
             days = {"monthly": 30, "yearly": 365, "lifetime": 36500}.get(app_row.plan, 30)
+            raw_token = app_row.bot_token or f"placeholder_{app_row.user_id}"
+            encrypted = encrypt_token(raw_token) if not raw_token.startswith("placeholder_") else raw_token
             db.add(Bot(
                 owner_id=app_row.user_id,
-                bot_token=app_row.bot_token or f"placeholder_{app_row.user_id}",
+                bot_token=encrypted,
                 bot_username=app_row.bot_name or f"clone_{app_row.user_id}",
                 is_master=False,
                 is_active=True,
