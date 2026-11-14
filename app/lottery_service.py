@@ -1,12 +1,14 @@
 from datetime import datetime
+import secrets
 
 from sqlalchemy import select, update
 
 from app.database import async_session
-from app.models import Lottery, Participant
+from app.models import Lottery, Participant, PrizeClaim
 from app.blockchain import get_latest_block_hash, draw_winners
 from app.channel_checker import check_channels_for_draw
 from app.config import settings
+from app.retry_queue import enqueue_retry
 
 
 async def get_due_lotteries() -> list:
@@ -96,6 +98,21 @@ async def execute_draw(bot, lottery):
             await mark_ended(lottery_id, "抽奖算法返回空结果")
             return
 
+        # 生成核销码
+        claim_codes = {}
+        async with async_session() as db:
+            for prize_name, user_ids in winners.items():
+                for uid in user_ids:
+                    code = secrets.token_hex(6).upper()
+                    db.add(PrizeClaim(
+                        lottery_id=lottery_id,
+                        user_id=uid,
+                        prize_name=prize_name,
+                        claim_code=code,
+                    ))
+                    claim_codes[(prize_name, uid)] = code
+            await db.commit()
+
         async with async_session() as db:
             await db.execute(
                 update(Lottery)
@@ -131,9 +148,11 @@ async def execute_draw(bot, lottery):
                 )
             except Exception as e:
                 print(f"❌ 发送开奖公告到 {target} 失败: {e}")
+                await enqueue_retry(target, announcement)
 
         for prize_name, user_ids in winners.items():
             for uid in user_ids:
+                code = claim_codes.get((prize_name, uid), "")
                 try:
                     await bot.send_message(
                         chat_id=uid,
@@ -141,7 +160,9 @@ async def execute_draw(bot, lottery):
                             f"🎉 <b>恭喜你中奖啦！</b>\n\n"
                             f"🏆 奖项：<b>{prize_name}</b>\n"
                             f"📌 活动：{lottery.title}\n"
-                            f"🆔 活动 ID：<code>LK-{lottery_id}</code>\n\n"
+                            f"🆔 活动 ID：<code>LK-{lottery_id}</code>\n"
+                            f"🔑 核销码：<code>{code}</code>\n\n"
+                            f"发送 /claim {code} 完成核销\n"
                             f"📄 <a href='{verify_url}'>查看区块链公证信息</a>"
                         ),
                         parse_mode="HTML",
