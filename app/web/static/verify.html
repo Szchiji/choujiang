@@ -24,6 +24,7 @@
   .step { border-left: 3px solid #fbbf24; padding-left: 16px; margin: 20px 0; }
   a { color: #8b5cf6; }
   .label { color: rgba(255,255,255,0.4); font-size: 12px; }
+  code { background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; }
 </style>
 </head>
 <body>
@@ -45,12 +46,14 @@
 <div class="step">
   <h3>✅ 如何自行验证？</h3>
   <ol>
-    <li>复制上方区块哈希</li>
-    <li>打开任意 SHA256 在线工具</li>
-    <li>输入：<code>区块哈希 + 活动ID + 开奖时间戳</code>，计算 SHA256</li>
-    <li>用该结果作为随机种子，对参与名单排序，前 N 名即中奖者</li>
+    <li>复制上方区块哈希（block_hash）</li>
+    <li>获取该活动的全部参与者 user_id，按升序排序后用逗号拼接</li>
+    <li>计算 <code>SHA256(排序后的user_id列表)</code> 得到 participant_hash</li>
+    <li>构造种子字符串：<code>{block_hash}_{lottery_id}_{participant_hash}</code></li>
+    <li>对种子字符串再做 SHA256，得到整数种子</li>
+    <li>用该种子初始化随机数生成器，对参与者打乱排序，按奖品顺序取前 N 名即为中奖者</li>
   </ol>
-  <p><b>任何人都可以复现此过程，确保平台无内幕。</b></p>
+  <p><b>种子完全确定性，任何人用相同公开数据都能复现相同结果。</b></p>
 </div>
 
 </body>
