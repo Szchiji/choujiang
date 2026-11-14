@@ -14,6 +14,9 @@ class Bot(Base):
     is_master = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
     expire_time = Column(DateTime, nullable=True)
+    # 白标字段
+    custom_name = Column(String(100), nullable=True)
+    custom_welcome = Column(Text, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
 
