@@ -96,17 +96,18 @@
 
   <div class="check-row">
     <input type="checkbox" id="public" v-model="form.is_public">
-    <label for="public" style="margin:0;">公开到 LuckyDraw 广场（取消勾选即为隐私模式）</label>
+    <label for="public" style="margin:0;">公开到 LuckyDraw 广场</label>
   </div>
 
   <button @click="submit">🚀 发布抽奖</button>
 </div>
 
 <script>
-const { createApp, ref } = Vue;
+const { createApp, ref, onMounted } = Vue;
 createApp({
   setup() {
     const uid = {{UID}};
+    const tplId = {{TPL}};
     const form = ref({
       title: '', subtitle: '', cover_image: '',
       prizes: [{ name: '', count: 1 }],
@@ -115,6 +116,25 @@ createApp({
     });
     const targetsText = ref('');
     const channelsText = ref('');
+
+    onMounted(async () => {
+      if (tplId && tplId > 0) {
+        try {
+          const res = await fetch(`/api/template/${tplId}?uid=${uid}`);
+          const data = await res.json();
+          if (data.ok && data.config) {
+            const c = data.config;
+            form.value.title = c.title || '';
+            form.value.subtitle = c.subtitle || '';
+            form.value.prizes = c.prizes || [{ name: '', count: 1 }];
+            form.value.draw_mode = c.draw_mode || 'time';
+            form.value.target_count = c.target_count || 50;
+            targetsText.value = (c.targets || []).join('\n');
+            channelsText.value = (c.channels || []).join('\n');
+          }
+        } catch (e) { console.error(e); }
+      }
+    });
 
     const submit = async () => {
       const payload = {

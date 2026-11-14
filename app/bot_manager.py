@@ -10,13 +10,12 @@ from sqlalchemy import select
 from app.database import async_session
 from app.models import Bot as BotModel
 from app.config import settings
+from app.crypto_util import decrypt_token
 
-# bot_id -> (Bot instance, Dispatcher)
 _clones: Dict[int, tuple] = {}
 
 
 async def load_clone_bots():
-    """启动时加载所有活跃子号"""
     async with async_session() as db:
         rows = (await db.execute(
             select(BotModel).where(
@@ -26,28 +25,30 @@ async def load_clone_bots():
         )).scalars().all()
 
     for row in rows:
-        if not row.bot_token or row.bot_token.startswith("placeholder_"):
+        raw = row.bot_token or ""
+        if not raw or raw.startswith("placeholder_"):
             continue
+        token = decrypt_token(raw)
         try:
-            await register_clone(row.id, row.bot_token)
+            await register_clone(row.id, token)
             print(f"✅ 子号已加载: id={row.id} @{row.bot_username}")
         except Exception as e:
             print(f"⚠️ 加载子号 {row.id} 失败: {e}")
 
 
 async def register_clone(bot_id: int, token: str):
-    """注册一个子号并设置 webhook"""
     if bot_id in _clones:
         return
 
     bot = Bot(token=token)
     dp = Dispatcher()
 
-    # 子号复用相同的 handlers（简化版：导入主路由）
     from app.handlers import start, lottery, checkin
+    from app.handlers.extra import router as extra_router
     dp.include_router(start.router)
     dp.include_router(lottery.router)
     dp.include_router(checkin.router)
+    dp.include_router(extra_router)
 
     webhook_url = f"{settings.PUBLIC_HOST.rstrip('/')}/webhook/{bot_id}"
     try:
