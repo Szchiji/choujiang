@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>我的看板 · LuckyDraw Cloud</title>
+<script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #0a0a0f; color: #fff;
+    max-width: 800px; margin: 0 auto; padding: 24px 16px;
+  }
+  h1 { font-size: 22px; margin-bottom: 16px; }
+  .stats { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+  .stat {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px; padding: 16px 20px; min-width: 140px;
+  }
+  .stat-value { font-size: 24px; font-weight: 800; color: #fbbf24; }
+  .stat-label { font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 14px; }
+  th { color: rgba(255,255,255,0.4); font-weight: 500; }
+  .status-ongoing { color: #22c55e; }
+  .status-ended { color: #ef4444; }
+</style>
+</head>
+<body>
+<div id="app">
+  <h1>📊 我的抽奖看板</h1>
+  <div class="stats">
+    <div class="stat"><div class="stat-value">{{ stats.total }}</div><div class="stat-label">总活动</div></div>
+    <div class="stat"><div class="stat-value">{{ stats.ongoing }}</div><div class="stat-label">进行中</div></div>
+    <div class="stat"><div class="stat-value">{{ stats.participants }}</div><div class="stat-label">累计参与</div></div>
+  </div>
+  <table>
+    <thead><tr><th>标题</th><th>状态</th><th>参与</th><th>创建时间</th></tr></thead>
+    <tbody>
+      <tr v-for="l in lotteries" :key="l.id">
+        <td>{{ l.title }}</td>
+        <td :class="'status-' + l.status">{{ l.status }}</td>
+        <td>{{ l.participants }}</td>
+        <td>{{ l.created_at }}</td>
+      </tr>
+    </tbody>
+  </table>
+  <p v-if="lotteries.length === 0" style="color:rgba(255,255,255,0.3);margin-top:20px;">暂无数据</p>
+</div>
+<script>
+const { createApp, ref, onMounted } = Vue;
+createApp({
+  setup() {
+    const params = new URLSearchParams(location.search);
+    const uid = params.get('uid') || 0;
+    const lotteries = ref([]);
+    const stats = ref({ total: 0, ongoing: 0, participants: 0 });
+
+    onMounted(async () => {
+      const res = await fetch('/api/dashboard?uid=' + uid);
+      const data = await res.json();
+      lotteries.value = data.lotteries || [];
+      stats.value = data.stats || stats.value;
+    });
+
+    return { lotteries, stats };
+  }
+}).mount('#app');
+</script>
+</body>
+</html>
