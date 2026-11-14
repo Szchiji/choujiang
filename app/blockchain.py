@@ -1,7 +1,6 @@
 import hashlib
 import random
 import httpx
-from datetime import datetime
 
 
 async def get_latest_block_hash():
@@ -24,14 +23,18 @@ async def get_latest_block_hash():
 def draw_winners(participants: list, prizes: list, block_hash: str, lottery_id: int):
     """
     多等级抽奖：先高后低，不重复中奖。
-    participants: [user_id, ...]
-    prizes: [{"name": "iPhone", "count": 1}, ...]
+    种子完全确定性：block_hash + lottery_id + sorted participants hash
+    任何人都可以用公开信息重新计算出相同结果。
     """
     total_prizes = sum(p["count"] for p in prizes)
     if len(participants) < total_prizes:
         return None
 
-    seed_str = f"{block_hash}_{lottery_id}_{datetime.now().timestamp()}"
+    # 确定性种子：不再使用当前时间戳
+    participant_hash = hashlib.sha256(
+        ",".join(str(u) for u in sorted(participants)).encode()
+    ).hexdigest()
+    seed_str = f"{block_hash}_{lottery_id}_{participant_hash}"
     seed_int = int(hashlib.sha256(seed_str.encode()).hexdigest(), 16)
     rng = random.Random(seed_int)
 

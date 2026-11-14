@@ -7,8 +7,11 @@ from app.config import settings
 from app.database import init_db, close_db
 from app.handlers import start, lottery, admin, payment, checkin
 from app.scheduler import start_scheduler
+from app.bot_instance import set_bot
 
 bot = Bot(token=settings.BOT_TOKEN)
+set_bot(bot)
+
 dp = Dispatcher()
 dp.include_router(start.router)
 dp.include_router(lottery.router)
