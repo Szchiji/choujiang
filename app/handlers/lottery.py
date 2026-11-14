@@ -1,34 +1,36 @@
 from aiogram import Router, types
 from aiogram.filters import Command
-from urllib.parse import urlencode
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from sqlalchemy import select, func
 
 from app.config import settings
 from app.database import async_session
-from app.models import Lottery, Participant, UserMeta
+from app.models import Lottery, Participant
 from app.channel_checker import check_channels, build_channel_links
 
 router = Router()
 
 
+def miniapp_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🚀 打开 Mini App 创建",
+                    web_app=WebAppInfo(url=f"{settings.PUBLIC_HOST}/app"),
+                )
+            ]
+        ]
+    )
+
+
 @router.message(Command("create"))
 async def create_cmd(message: types.Message):
-    user_id = message.from_user.id
-
-    async with async_session() as db:
-        meta = (await db.execute(
-            select(UserMeta).where(UserMeta.user_id == user_id)
-        )).scalar_one_or_none()
-
-    params = urlencode({"uid": user_id})
-    create_url = f"{settings.PUBLIC_HOST}/create?{params}"
-
     await message.reply(
-        f"📝 点击下方链接创建抽奖：\n\n"
-        f'🔗 <a href="{create_url}">打开创建后台</a>\n\n'
-        f"💡 支持多奖品、多目标发布、区块链公证开奖",
+        "📝 点击下方按钮打开 Mini App 创建抽奖\n\n"
+        "💡 支持多奖品、多目标发布、区块链公证开奖",
         parse_mode="HTML",
-        disable_web_page_preview=True,
+        reply_markup=miniapp_keyboard(),
     )
 
 
@@ -45,7 +47,10 @@ async def my_lotteries(message: types.Message):
         rows = (await db.execute(stmt)).scalars().all()
 
     if not rows:
-        await message.answer("📭 你还没有创建过抽奖活动。\n发送 /create 开始创建！")
+        await message.answer(
+            "📭 你还没有创建过抽奖活动。",
+            reply_markup=miniapp_keyboard(),
+        )
         return
 
     text = "📋 <b>我创建的抽奖</b>\n\n"
@@ -56,7 +61,7 @@ async def my_lotteries(message: types.Message):
         text += f"{status_icon} <b>{lot.title}</b>\n"
         text += f"   🆔 <code>LK-{lot.id}</code> · 状态：{lot.status}\n\n"
 
-    await message.answer(text, parse_mode="HTML")
+    await message.answer(text, parse_mode="HTML", reply_markup=miniapp_keyboard())
 
 
 @router.callback_query(lambda c: c.data.startswith("join_"))

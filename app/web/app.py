@@ -22,6 +22,13 @@ STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
+@app.get("/app", response_class=HTMLResponse)
+async def miniapp_page():
+    """Telegram Mini App 入口"""
+    html = (STATIC_DIR / "miniapp.html").read_text(encoding="utf-8")
+    return HTMLResponse(content=html)
+
+
 @app.get("/create", response_class=HTMLResponse)
 async def create_page(uid: int = 0, tpl: int = 0):
     html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
@@ -56,6 +63,63 @@ async def admin_page():
 async def dashboard_page(uid: int = 0):
     html = (STATIC_DIR / "dashboard.html").read_text(encoding="utf-8")
     return HTMLResponse(content=html)
+
+
+@app.get("/api/me")
+async def api_me(uid: int = 0):
+    if not uid:
+        return {}
+    async with async_session() as db:
+        meta = (await db.execute(
+            select(UserMeta).where(UserMeta.user_id == uid)
+        )).scalar_one_or_none()
+    if not meta:
+        return {"free_quota": 1, "extra_credits": 0, "sign_in_streak": 0, "referral_count": 0}
+    return {
+        "free_quota": meta.free_quota or 0,
+        "extra_credits": meta.extra_credits or 0,
+        "sign_in_streak": meta.sign_in_streak or 0,
+        "referral_count": meta.referral_count or 0,
+    }
+
+
+@app.post("/api/checkin")
+async def api_checkin(uid: int = 0):
+    if not uid:
+        return {"ok": False, "message": "缺少 uid"}
+    from datetime import date
+    today = date.today()
+    async with async_session() as db:
+        meta = (await db.execute(
+            select(UserMeta).where(UserMeta.user_id == uid)
+        )).scalar_one_or_none()
+        if not meta:
+            meta = UserMeta(user_id=uid, free_quota=1, extra_credits=0)
+            db.add(meta)
+            await db.commit()
+            await db.refresh(meta)
+
+        last = meta.last_sign_in.date() if meta.last_sign_in else None
+        if last == today:
+            return {"ok": False, "message": "今天已签到"}
+
+        if last == today - timedelta(days=1):
+            streak = (meta.sign_in_streak or 0) + 1
+        else:
+            streak = 1
+
+        bonus = 1
+        if streak % 30 == 0:
+            bonus = 10
+        elif streak % 7 == 0:
+            bonus = 3
+
+        meta.sign_in_streak = streak
+        meta.last_sign_in = datetime.now()
+        meta.extra_credits = (meta.extra_credits or 0) + bonus
+        await db.commit()
+
+    return {"ok": True, "message": f"签到成功，连续 {streak} 天，+{bonus} 次"}
 
 
 @app.get("/api/dashboard")
@@ -413,7 +477,6 @@ async def admin_stats(x_admin_token: str = Header(None)):
             select(func.count(Bot.id)).where(Bot.is_master == False, Bot.is_active == True)
         )).scalar() or 0
 
-        # 真实收入
         revenue = (await db.execute(
             select(func.coalesce(func.sum(CloneApplication.amount_stars), 0))
             .where(CloneApplication.status.in_(["paid", "approved"]))
