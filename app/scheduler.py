@@ -9,6 +9,7 @@ from app.redis_client import redis_lock
 from app.database import async_session
 from app.models import Bot, UserMeta, Lottery
 from app.lottery_service import get_due_lotteries, execute_draw
+from app.retry_queue import process_retries
 
 scheduler = AsyncIOScheduler()
 
@@ -26,6 +27,18 @@ async def job_auto_draw(bot):
                 await execute_draw(bot, lottery)
         except Exception as e:
             print(f"❌ 自动开奖任务异常: {e}")
+
+
+async def job_process_retries(bot):
+    async with redis_lock("retry_queue", ttl=30) as acquired:
+        if not acquired:
+            return
+        try:
+            n = await process_retries(bot, max_items=30)
+            if n:
+                print(f"✅ 重试发送成功 {n} 条")
+        except Exception as e:
+            print(f"❌ 重试队列异常: {e}")
 
 
 async def job_reset_quota():
@@ -128,6 +141,10 @@ def start_scheduler(bot):
         args=[bot], id="auto_draw", replace_existing=True, max_instances=1,
     )
     scheduler.add_job(
+        job_process_retries, IntervalTrigger(minutes=2),
+        args=[bot], id="retry_queue", replace_existing=True, max_instances=1,
+    )
+    scheduler.add_job(
         job_reset_quota, CronTrigger(hour=0, minute=0),
         id="reset_quota", replace_existing=True,
     )
@@ -144,4 +161,4 @@ def start_scheduler(bot):
         id="clean_old", replace_existing=True,
     )
     scheduler.start()
-    print("✅ 定时任务调度器已启动（5 个任务）")
+    print("✅ 定时任务调度器已启动（6 个任务）")
