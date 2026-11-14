@@ -6,6 +6,7 @@ from aiogram import Bot, Dispatcher, types
 from app.config import settings
 from app.database import init_db, close_db
 from app.handlers import start, lottery, admin, payment, checkin
+from app.handlers.extra import router as extra_router
 from app.scheduler import start_scheduler
 from app.bot_instance import set_bot
 from app.bot_manager import load_clone_bots, get_clone, shutdown_all
@@ -19,6 +20,7 @@ dp.include_router(lottery.router)
 dp.include_router(admin.router)
 dp.include_router(payment.router)
 dp.include_router(checkin.router)
+dp.include_router(extra_router)
 
 SAFE_SECRET = settings.safe_webhook_secret
 
@@ -37,9 +39,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"⚠️ 母号 Webhook 设置失败：{e}")
 
-    # 加载子号
     await load_clone_bots()
-
     start_scheduler(bot)
     print("✅ LuckyDraw Cloud 启动完成")
 
@@ -59,7 +59,6 @@ app = FastAPI(title="LuckyDraw Cloud", lifespan=lifespan)
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
-    """母号 webhook"""
     secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
     if secret != SAFE_SECRET:
         raise HTTPException(status_code=403, detail="Invalid secret token")
@@ -70,7 +69,6 @@ async def telegram_webhook(request: Request):
 
 @app.post("/webhook/{bot_id}")
 async def clone_webhook(bot_id: int, request: Request):
-    """子号 webhook"""
     secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
     if secret != SAFE_SECRET:
         raise HTTPException(status_code=403, detail="Invalid secret token")
@@ -87,7 +85,27 @@ async def clone_webhook(bot_id: int, request: Request):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    """深度健康检查"""
+    status = {"status": "ok", "db": False, "redis": False}
+    try:
+        from app.database import async_session
+        from sqlalchemy import text
+        async with async_session() as db:
+            await db.execute(text("SELECT 1"))
+        status["db"] = True
+    except Exception:
+        pass
+
+    try:
+        from app.redis_client import redis
+        await redis.ping()
+        status["redis"] = True
+    except Exception:
+        pass
+
+    if not status["db"] or not status["redis"]:
+        status["status"] = "degraded"
+    return status
 
 
 from app.web.app import app as web_app
