@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, HTTPException
 from aiogram import Bot, Dispatcher, types
+from aiogram.types import MenuButtonWebApp, WebAppInfo
 
 from app.config import settings
 from app.database import init_db, close_db
@@ -25,6 +26,20 @@ dp.include_router(extra_router)
 SAFE_SECRET = settings.safe_webhook_secret
 
 
+async def set_menu_button():
+    """启动时自动设置 Menu Button 为 Mini App"""
+    try:
+        await bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(
+                text="🎯 抽奖",
+                web_app=WebAppInfo(url=f"{settings.PUBLIC_HOST.rstrip('/')}/app"),
+            )
+        )
+        print(f"✅ Menu Button 已设置：{settings.PUBLIC_HOST}/app")
+    except Exception as e:
+        print(f"⚠️ Menu Button 设置失败：{e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
@@ -39,6 +54,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"⚠️ 母号 Webhook 设置失败：{e}")
 
+    await set_menu_button()
     await load_clone_bots()
     start_scheduler(bot)
     print("✅ LuckyDraw Cloud 启动完成")
@@ -85,7 +101,6 @@ async def clone_webhook(bot_id: int, request: Request):
 
 @app.get("/health")
 async def health():
-    """深度健康检查"""
     status = {"status": "ok", "db": False, "redis": False}
     try:
         from app.database import async_session
