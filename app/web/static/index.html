@@ -48,6 +48,8 @@
     background: rgba(139,233,253,0.1); padding: 3px 10px;
     border-radius: 20px; margin-left: 8px;
   }
+  .check-row { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
+  .check-row input { width: auto; }
 </style>
 </head>
 <body>
@@ -92,6 +94,11 @@
   <label v-if="form.draw_mode === 'count'">目标参与人数</label>
   <input v-if="form.draw_mode === 'count'" type="number" v-model.number="form.target_count">
 
+  <div class="check-row">
+    <input type="checkbox" id="public" v-model="form.is_public">
+    <label for="public" style="margin:0;">公开到 LuckyDraw 广场（取消勾选即为隐私模式）</label>
+  </div>
+
   <button @click="submit">🚀 发布抽奖</button>
 </div>
 
@@ -104,6 +111,7 @@ createApp({
       title: '', subtitle: '', cover_image: '',
       prizes: [{ name: '', count: 1 }],
       draw_mode: 'time', draw_time: '', target_count: 50,
+      is_public: true,
     });
     const targetsText = ref('');
     const channelsText = ref('');
