@@ -14,7 +14,6 @@ class Bot(Base):
     is_master = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
     expire_time = Column(DateTime, nullable=True)
-    # 白标字段
     custom_name = Column(String(100), nullable=True)
     custom_welcome = Column(Text, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
@@ -71,6 +70,7 @@ class CloneApplication(Base):
     bot_token = Column(String(255))
     plan = Column(String(20))
     status = Column(String(20), default="pending")
+    amount_stars = Column(Integer, default=0)
     created_at = Column(DateTime, server_default=func.now())
     processed_at = Column(DateTime, nullable=True)
 
@@ -80,4 +80,26 @@ class Referral(Base):
     id = Column(Integer, primary_key=True)
     inviter_id = Column(BigInteger, nullable=False)
     invitee_id = Column(BigInteger, nullable=False, unique=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class LotteryTemplate(Base):
+    __tablename__ = "lottery_templates"
+    id = Column(Integer, primary_key=True)
+    owner_id = Column(BigInteger, nullable=False)
+    name = Column(String(100))
+    config = Column(JSON)
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class PrizeClaim(Base):
+    """中奖核销记录"""
+    __tablename__ = "prize_claims"
+    id = Column(Integer, primary_key=True)
+    lottery_id = Column(Integer, nullable=False)
+    user_id = Column(BigInteger, nullable=False)
+    prize_name = Column(String(200))
+    claim_code = Column(String(32), unique=True)
+    claimed = Column(Boolean, default=False)
+    claimed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
