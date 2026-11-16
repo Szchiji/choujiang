@@ -103,9 +103,22 @@
 </div>
 
 <script>
+
+function telegramAuthHeaders(extra) {
+  const headers = Object.assign({}, extra || {});
+  const initData = (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) || '';
+  if (initData) headers['X-Telegram-Init-Data'] = initData;
+  const botId = new URLSearchParams(location.search).get('bot_id');
+  if (botId) headers['X-Telegram-Bot-Id'] = botId;
+  return headers;
+}
+
 const { createApp, ref, onMounted } = Vue;
 createApp({
   setup() {
+    if (window.Telegram && window.Telegram.WebApp) {
+      window.Telegram.WebApp.ready();
+    }
     const uid = {{UID}};
     const tplId = {{TPL}};
     const form = ref({
@@ -120,7 +133,7 @@ createApp({
     onMounted(async () => {
       if (tplId && tplId > 0) {
         try {
-          const res = await fetch(`/api/template/${tplId}?uid=${uid}`);
+          const res = await fetch(`/api/template/${tplId}`, { headers: telegramAuthHeaders() });
           const data = await res.json();
           if (data.ok && data.config) {
             const c = data.config;
@@ -138,14 +151,13 @@ createApp({
 
     const submit = async () => {
       const payload = {
-        uid,
         ...form.value,
         targets: targetsText.value.split('\n').map(s => s.trim()).filter(Boolean),
         channels: channelsText.value.split('\n').map(s => s.trim()).filter(Boolean),
       };
       const res = await fetch('/api/lottery', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: telegramAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(payload),
       });
       const data = await res.json();

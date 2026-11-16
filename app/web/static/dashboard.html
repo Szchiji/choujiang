@@ -49,16 +49,27 @@
   <p v-if="lotteries.length === 0" style="color:rgba(255,255,255,0.3);margin-top:20px;">暂无数据</p>
 </div>
 <script>
+
+function telegramAuthHeaders(extra) {
+  const headers = Object.assign({}, extra || {});
+  const initData = (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) || '';
+  if (initData) headers['X-Telegram-Init-Data'] = initData;
+  const botId = new URLSearchParams(location.search).get('bot_id');
+  if (botId) headers['X-Telegram-Bot-Id'] = botId;
+  return headers;
+}
+
 const { createApp, ref, onMounted } = Vue;
 createApp({
   setup() {
-    const params = new URLSearchParams(location.search);
-    const uid = params.get('uid') || 0;
+    if (window.Telegram && window.Telegram.WebApp) {
+      window.Telegram.WebApp.ready();
+    }
     const lotteries = ref([]);
     const stats = ref({ total: 0, ongoing: 0, participants: 0 });
 
     onMounted(async () => {
-      const res = await fetch('/api/dashboard?uid=' + uid);
+      const res = await fetch('/api/dashboard', { headers: telegramAuthHeaders() });
       const data = await res.json();
       lotteries.value = data.lotteries || [];
       stats.value = data.stats || stats.value;

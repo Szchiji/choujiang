@@ -158,6 +158,16 @@
 </div>
 
 <script>
+
+function telegramAuthHeaders(extra) {
+  const headers = Object.assign({}, extra || {});
+  const initData = (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) || '';
+  if (initData) headers['X-Telegram-Init-Data'] = initData;
+  const botId = new URLSearchParams(location.search).get('bot_id');
+  if (botId) headers['X-Telegram-Bot-Id'] = botId;
+  return headers;
+}
+
 const tg = window.Telegram?.WebApp;
 if (tg) {
   tg.ready();
@@ -190,7 +200,7 @@ createApp({
 
     const loadMy = async () => {
       try {
-        const res = await fetch(`/api/dashboard?uid=${uid}`);
+        const res = await fetch('/api/dashboard', { headers: telegramAuthHeaders() });
         const data = await res.json();
         myList.value = data.lotteries || [];
       } catch (e) {}
@@ -204,7 +214,7 @@ createApp({
     };
     const loadMe = async () => {
       try {
-        const res = await fetch(`/api/me?uid=${uid}`);
+        const res = await fetch('/api/me', { headers: telegramAuthHeaders() });
         me.value = await res.json();
       } catch (e) {}
     };
@@ -226,14 +236,13 @@ createApp({
       if (tg) tg.MainButton.showProgress();
       try {
         const payload = {
-          uid,
           ...form.value,
           targets: targetsText.value.split('\n').map(s => s.trim()).filter(Boolean),
           channels: channelsText.value.split('\n').map(s => s.trim()).filter(Boolean),
         };
         const res = await fetch('/api/lottery', {
           method: 'POST',
-          headers: {'Content-Type': 'application/json'},
+          headers: telegramAuthHeaders({'Content-Type': 'application/json'}),
           body: JSON.stringify(payload),
         });
         const data = await res.json();
@@ -253,7 +262,7 @@ createApp({
 
     const doCheckin = async () => {
       try {
-        const res = await fetch(`/api/checkin?uid=${uid}`, {method: 'POST'});
+        const res = await fetch('/api/checkin', {method: 'POST', headers: telegramAuthHeaders()});
         const data = await res.json();
         if (tg) tg.showAlert(data.message || '签到完成');
         loadMe();

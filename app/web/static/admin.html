@@ -82,13 +82,45 @@
     border-radius: 8px; cursor: pointer;
   }
   .empty { text-align: center; padding: 60px; color: rgba(255,255,255,0.3); }
+
+  .login-wrap {
+    max-width: 400px; margin: 12vh auto 0; padding: 32px 24px;
+    background: #12121e; border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+  }
+  .login-wrap h1 { font-size: 20px; margin-bottom: 8px; }
+  .login-hint { color: rgba(255,255,255,0.45); font-size: 13px; margin-bottom: 16px; }
+  .login-wrap input {
+    width: 100%; padding: 12px 14px; border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.04); color: #fff; font-size: 15px;
+  }
+  .login-btn {
+    width: 100%; margin-top: 14px; padding: 12px;
+    background: linear-gradient(135deg, #7c3aed, #6d28d9);
+    border: none; border-radius: 10px; color: #fff; font-weight: 700; cursor: pointer;
+  }
+  .login-error { color: #ef4444; font-size: 13px; margin-top: 12px; }
+  .logout {
+    margin-top: 24px; color: rgba(255,255,255,0.4); font-size: 13px;
+    cursor: pointer; background: none; border: none;
+  }
 </style>
 </head>
 <body>
 
-<div id="app" class="layout">
+<div id="app">
+  <div v-if="!unlocked" class="login-wrap">
+    <h1>管理员登录</h1>
+    <p class="login-hint">请输入独立的管理令牌（ADMIN_API_TOKEN）。不要使用 Webhook 密钥。</p>
+    <input type="password" v-model="tokenInput" placeholder="管理令牌" autocomplete="off" @keyup.enter="login">
+    <button class="login-btn" @click="login">进入后台</button>
+    <p v-if="loginError" class="login-error">{{ loginError }}</p>
+  </div>
+  <div v-else class="layout">
   <aside class="sidebar">
     <div class="logo">✦ LuckyDraw Admin</div>
+      <button class="logout" @click="logout">退出登录</button>
     <a class="nav-item" :class="{active: tab==='dashboard'}" @click="tab='dashboard'">📊 Dashboard</a>
     <a class="nav-item" :class="{active: tab==='users'}" @click="tab='users'; loadUsers()">👥 用户管理</a>
     <a class="nav-item" :class="{active: tab==='orders'}" @click="tab='orders'; loadOrders()">💰 订单列表</a>
@@ -217,44 +249,79 @@
       </table>
     </div>
   </main>
+  </div>
 </div>
 
 <script>
 const { createApp, ref, onMounted } = Vue;
 createApp({
   setup() {
+    const TOKEN_KEY = 'ld_admin_token';
     const tab = ref('dashboard');
     const stats = ref({ users: 0, lotteries: 0, bots: 0, revenue: 0 });
     const users = ref([]);
     const orders = ref([]);
     const bots = ref([]);
-    const adminToken = '{{ADMIN_TOKEN}}';
+    const unlocked = ref(false);
+    const tokenInput = ref('');
+    const loginError = ref('');
 
-    const headers = { 'X-Admin-Token': adminToken };
+    const authHeaders = () => ({ 'X-Admin-Token': sessionStorage.getItem(TOKEN_KEY) || '' });
 
     const loadStats = async () => {
-      const res = await fetch('/api/admin/stats', { headers });
+      const res = await fetch('/api/admin/stats', { headers: authHeaders() });
+      if (!res.ok) throw new Error('forbidden');
       stats.value = await res.json();
     };
     const loadUsers = async () => {
-      const res = await fetch('/api/admin/users', { headers });
+      const res = await fetch('/api/admin/users', { headers: authHeaders() });
+      if (!res.ok) return;
       users.value = await res.json();
     };
     const loadOrders = async () => {
-      const res = await fetch('/api/admin/orders', { headers });
+      const res = await fetch('/api/admin/orders', { headers: authHeaders() });
+      if (!res.ok) return;
       orders.value = await res.json();
     };
     const loadBots = async () => {
-      const res = await fetch('/api/admin/bots', { headers });
+      const res = await fetch('/api/admin/bots', { headers: authHeaders() });
+      if (!res.ok) return;
       bots.value = await res.json();
     };
     const approve = async (id) => {
-      await fetch(`/api/admin/orders/${id}/approve`, { method: 'POST', headers });
+      await fetch(`/api/admin/orders/${id}/approve`, { method: 'POST', headers: authHeaders() });
       loadOrders();
     };
+    const login = async () => {
+      const token = (tokenInput.value || '').trim();
+      if (!token) { loginError.value = '请输入令牌'; return; }
+      const res = await fetch('/api/admin/stats', { headers: { 'X-Admin-Token': token } });
+      if (!res.ok) { loginError.value = '令牌无效或管理接口未正确配置'; return; }
+      sessionStorage.setItem(TOKEN_KEY, token);
+      tokenInput.value = '';
+      loginError.value = '';
+      stats.value = await res.json();
+      unlocked.value = true;
+    };
+    const logout = () => {
+      sessionStorage.removeItem(TOKEN_KEY);
+      unlocked.value = false;
+      tokenInput.value = '';
+    };
 
-    onMounted(loadStats);
-    return { tab, stats, users, orders, bots, loadUsers, loadOrders, loadBots, approve };
+    onMounted(async () => {
+      if (!sessionStorage.getItem(TOKEN_KEY)) return;
+      try {
+        await loadStats();
+        unlocked.value = true;
+      } catch (e) {
+        sessionStorage.removeItem(TOKEN_KEY);
+      }
+    });
+    return {
+      tab, stats, users, orders, bots, unlocked, tokenInput, loginError,
+      loadUsers, loadOrders, loadBots, approve, login, logout,
+    };
   }
 }).mount('#app');
 </script>
