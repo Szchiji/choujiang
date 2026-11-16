@@ -1,5 +1,6 @@
 from sqlalchemy import (
     Column, BigInteger, String, Integer, Boolean, DateTime, Text, JSON,
+    UniqueConstraint,
 )
 from sqlalchemy.sql import func
 from app.database import Base
@@ -42,6 +43,9 @@ class Lottery(Base):
 
 class Participant(Base):
     __tablename__ = "participants"
+    __table_args__ = (
+        UniqueConstraint("lottery_id", "user_id", name="uq_participants_lottery_user"),
+    )
     id = Column(Integer, primary_key=True)
     lottery_id = Column(Integer, nullable=False)
     user_id = Column(BigInteger, nullable=False)
@@ -95,6 +99,9 @@ class LotteryTemplate(Base):
 class PrizeClaim(Base):
     """中奖核销记录"""
     __tablename__ = "prize_claims"
+    __table_args__ = (
+        UniqueConstraint("lottery_id", "user_id", name="uq_prize_claims_lottery_user"),
+    )
     id = Column(Integer, primary_key=True)
     lottery_id = Column(Integer, nullable=False)
     user_id = Column(BigInteger, nullable=False)
