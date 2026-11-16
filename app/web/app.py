@@ -16,6 +16,7 @@ from app.models import (
 from app.bot_instance import get_bot
 from app.message_builder import build_lottery_message
 from app.crypto_util import encrypt_token
+from app.telegram_auth import require_webapp_identity, assert_same_user
 
 app = FastAPI(title="LuckyDraw Web")
 STATIC_DIR = Path(__file__).parent / "static"
@@ -54,8 +55,8 @@ async def plaza_page():
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_page():
+    """管理后台页面。不向 HTML 注入任何密钥，由管理员在页面中自行填写独立令牌。"""
     html = (STATIC_DIR / "admin.html").read_text(encoding="utf-8")
-    html = html.replace("{{ADMIN_TOKEN}}", settings.safe_webhook_secret)
     return HTMLResponse(content=html)
 
 
@@ -66,9 +67,10 @@ async def dashboard_page(uid: int = 0):
 
 
 @app.get("/api/me")
-async def api_me(uid: int = 0):
-    if not uid:
-        return {}
+async def api_me(request: Request, uid: int = 0):
+    identity = await require_webapp_identity(request)
+    assert_same_user(uid, identity.user_id)
+    uid = identity.user_id
     async with async_session() as db:
         meta = (await db.execute(
             select(UserMeta).where(UserMeta.user_id == uid)
@@ -84,9 +86,10 @@ async def api_me(uid: int = 0):
 
 
 @app.post("/api/checkin")
-async def api_checkin(uid: int = 0):
-    if not uid:
-        return {"ok": False, "message": "缺少 uid"}
+async def api_checkin(request: Request, uid: int = 0):
+    identity = await require_webapp_identity(request)
+    assert_same_user(uid, identity.user_id)
+    uid = identity.user_id
     from datetime import date
     today = date.today()
     async with async_session() as db:
@@ -123,9 +126,10 @@ async def api_checkin(uid: int = 0):
 
 
 @app.get("/api/dashboard")
-async def api_dashboard(uid: int = 0):
-    if not uid:
-        return {"lotteries": [], "stats": {"total": 0, "ongoing": 0, "participants": 0}}
+async def api_dashboard(request: Request, uid: int = 0):
+    identity = await require_webapp_identity(request)
+    assert_same_user(uid, identity.user_id)
+    uid = identity.user_id
 
     async with async_session() as db:
         rows = (await db.execute(
@@ -164,7 +168,10 @@ async def api_dashboard(uid: int = 0):
 
 
 @app.get("/api/template/{tpl_id}")
-async def get_template(tpl_id: int, uid: int = 0):
+async def get_template(request: Request, tpl_id: int, uid: int = 0):
+    identity = await require_webapp_identity(request)
+    assert_same_user(uid, identity.user_id)
+    uid = identity.user_id
     async with async_session() as db:
         tpl = (await db.execute(
             select(LotteryTemplate).where(
@@ -260,11 +267,10 @@ async def get_bot_username() -> str:
 
 @app.post("/api/lottery")
 async def create_lottery_api(request: Request):
+    identity = await require_webapp_identity(request)
     data = await request.json()
-    uid = int(data.get("uid") or 0)
-
-    if not uid:
-        return JSONResponse({"ok": False, "message": "缺少用户身份"}, status_code=400)
+    assert_same_user(data.get("uid"), identity.user_id)
+    uid = identity.user_id
 
     if not data.get("title"):
         return JSONResponse({"ok": False, "message": "标题不能为空"}, status_code=400)
@@ -463,7 +469,13 @@ async def export_participants(lottery_id: int, x_admin_token: str = Header(None)
 
 
 def _check_admin(token: str):
-    if not token or token != settings.safe_webhook_secret:
+    """校验管理令牌。仅接受独立的 ADMIN_API_TOKEN，拒绝 Webhook secret 或未配置。"""
+    import hmac as _hmac
+
+    if not settings.is_admin_api_configured():
+        raise HTTPException(status_code=403, detail="Forbidden")
+    expected = settings.admin_api_token
+    if not token or not _hmac.compare_digest(token, expected):
         raise HTTPException(status_code=403, detail="Forbidden")
 
 

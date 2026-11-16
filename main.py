@@ -44,15 +44,18 @@ async def set_menu_button():
 async def lifespan(app: FastAPI):
     await init_db()
 
-    try:
-        await bot.set_webhook(
-            url=settings.WEBHOOK_URL,
-            secret_token=SAFE_SECRET,
-            drop_pending_updates=True,
-        )
-        print(f"✅ 母号 Webhook 已设置：{settings.WEBHOOK_URL}")
-    except Exception as e:
-        print(f"⚠️ 母号 Webhook 设置失败：{e}")
+    if not SAFE_SECRET:
+        print("⚠️ WEBHOOK_SECRET 未配置或无效，已跳过注册 Webhook")
+    else:
+        try:
+            await bot.set_webhook(
+                url=settings.WEBHOOK_URL,
+                secret_token=SAFE_SECRET,
+                drop_pending_updates=True,
+            )
+            print(f"✅ 母号 Webhook 已设置：{settings.WEBHOOK_URL}")
+        except Exception as e:
+            print(f"⚠️ 母号 Webhook 设置失败：{e}")
 
     await set_menu_button()
     await load_clone_bots()
@@ -75,8 +78,10 @@ app = FastAPI(title="LuckyDraw Cloud", lifespan=lifespan)
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
-    secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
-    if secret != SAFE_SECRET:
+    if not SAFE_SECRET:
+        raise HTTPException(status_code=503, detail="Webhook is not configured")
+    secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token") or ""
+    if not secret or secret != SAFE_SECRET:
         raise HTTPException(status_code=403, detail="Invalid secret token")
     update = types.Update.model_validate(await request.json())
     await dp.feed_update(bot, update)
@@ -85,8 +90,10 @@ async def telegram_webhook(request: Request):
 
 @app.post("/webhook/{bot_id}")
 async def clone_webhook(bot_id: int, request: Request):
-    secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
-    if secret != SAFE_SECRET:
+    if not SAFE_SECRET:
+        raise HTTPException(status_code=503, detail="Webhook is not configured")
+    secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token") or ""
+    if not secret or secret != SAFE_SECRET:
         raise HTTPException(status_code=403, detail="Invalid secret token")
 
     clone = get_clone(bot_id)

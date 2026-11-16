@@ -197,7 +197,8 @@ curl https://your-domain.com/health
 | `BOT_TOKEN` | ✅ | Telegram Bot Token | `123456:ABC-DEF...` |
 | `ADMIN_IDS` | ✅ | 管理员 Telegram ID（逗号分隔） | `123456789,987654321` |
 | `WEBHOOK_URL` | ✅ | Webhook 完整地址 | `https://your-domain.com/webhook` |
-| `WEBHOOK_SECRET` | ✅ | Webhook 密钥（随机字符串） | `a1b2c3d4e5f6...` |
+| `WEBHOOK_SECRET` | ✅ | Telegram Webhook 密钥（随机字符串，无内置默认值；留空则拒绝注册 Webhook） | 使用下方命令生成 |
+| `ADMIN_API_TOKEN` | ✅ | 管理后台独立令牌，必须与 `WEBHOOK_SECRET` 不同；未配置或相同则管理接口全部拒绝 | 使用下方命令另行生成 |
 | `PUBLIC_HOST` | ✅ | 公网访问地址 | `https://your-domain.com` |
 | `DATABASE_URL` | ✅ | PostgreSQL 连接字符串 | `postgresql+asyncpg://user:pass@db:5432/luckycloud` |
 | `REDIS_URL` | ✅ | Redis 连接字符串 | `redis://redis:6379/0` |
@@ -211,6 +212,8 @@ openssl rand -hex 32
 # Python
 python -c "import secrets; print(secrets.token_hex(32))"
 ```
+
+请为 `WEBHOOK_SECRET` 与 `ADMIN_API_TOKEN` 各生成一次，二者不得相同。Mini App / 创建页 / 看板的写操作需在请求头携带 Telegram `initData`（`X-Telegram-Init-Data`）；服务端验签后以其中的用户身份为准，忽略或拒绝与之不一致的 `uid`。子号 Mini App 还需携带 `X-Telegram-Bot-Id`，并用该子号 Token 验签。
 
 ---
 
@@ -345,11 +348,13 @@ choujiang/
 
 #### 管理后台鉴权
 
-所有 `/api/admin/*` 接口需要携带 Header：
+打开 `/admin` 后在页面中输入独立的 `ADMIN_API_TOKEN`（不会写入页面源码）。所有 `/api/admin/*` 接口需要携带 Header：
 
 ```
-X-Admin-Token: {WEBHOOK_SECRET}
+X-Admin-Token: {ADMIN_API_TOKEN}
 ```
+
+不要把 Webhook 密钥当作管理令牌。现有子号 Token 仍用 `WEBHOOK_SECRET` 派生加密密钥，**轮换 `WEBHOOK_SECRET` 前需先规划 Token 再加密迁移，本版本不自动迁移**。
 
 ---
 
@@ -432,7 +437,7 @@ X-Admin-Token: {WEBHOOK_SECRET}
 
 ### 管理接口
 
-所有接口需 Header：`X-Admin-Token: {WEBHOOK_SECRET}`
+所有接口需 Header：`X-Admin-Token: {ADMIN_API_TOKEN}`（不可使用 Webhook 密钥）
 
 #### `GET /api/admin/stats`
 

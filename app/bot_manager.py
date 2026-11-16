@@ -51,14 +51,18 @@ async def register_clone(bot_id: int, token: str):
     dp.include_router(extra_router)
 
     webhook_url = f"{settings.PUBLIC_HOST.rstrip('/')}/webhook/{bot_id}"
-    try:
-        await bot.set_webhook(
-            url=webhook_url,
-            secret_token=settings.safe_webhook_secret,
-            drop_pending_updates=True,
-        )
-    except Exception as e:
-        print(f"⚠️ 子号 {bot_id} webhook 设置失败: {e}")
+    secret = settings.safe_webhook_secret
+    if not secret:
+        print(f"⚠️ WEBHOOK_SECRET 未配置，已跳过子号 {bot_id} 的 Webhook 注册")
+    else:
+        try:
+            await bot.set_webhook(
+                url=webhook_url,
+                secret_token=secret,
+                drop_pending_updates=True,
+            )
+        except Exception as e:
+            print(f"⚠️ 子号 {bot_id} webhook 设置失败: {e}")
 
     _clones[bot_id] = (bot, dp)
 
